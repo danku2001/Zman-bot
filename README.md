@@ -37,6 +37,7 @@ cp apps/bot/.env.example apps/bot/.env
 
 ```env
 TELEGRAM_BOT_TOKEN=123456:ABC...
+API_SECRET=
 PORT=4000
 DATABASE_PATH=../../data/reminders.db
 TZ=Asia/Jerusalem
@@ -50,6 +51,7 @@ cp apps/web/.env.example apps/web/.env
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:4000
+NEXT_PUBLIC_API_SECRET=
 ```
 
 ## הרצה
@@ -76,6 +78,17 @@ npm run dev:web
 
 - API ובוט: `http://localhost:4000`
 - דשבורד: `http://localhost:3000`
+
+## Before Pushing To GitHub
+
+לפני שמעלים את הפרויקט לריפו ציבורי:
+
+- ודאו שאין קבצי `.env` ב-commit.
+- ודאו שאין `TELEGRAM_BOT_TOKEN`, `API_SECRET`, או סודות אחרים בקוד.
+- ודאו ש-`node_modules`, `.next`, `dist`, `data/*.db`, וקבצי log מוחרגים ב-`.gitignore`.
+- הריצו `npm run test`, `npm run lint`, ו-`npm run build`.
+- הגדירו סודות רק ב-Render/GitHub/סביבת השרת, לא בתוך הקוד.
+- אם טוקן Telegram דלף, סובבו אותו מיד דרך BotFather.
 
 ## הפעלה 24/7 בענן
 
@@ -211,6 +224,14 @@ npm run dev:web
 - `POST /api/import`
 
 ה-export כולל תזכורות ו-`reminder_events`, ולא כולל secrets או משתני סביבה.
+
+אם `API_SECRET` מוגדר, כל `/api/*` דורש:
+
+```http
+Authorization: Bearer API_SECRET
+```
+
+`/health` נשאר ציבורי כדי לאפשר health checks.
 
 ## בדיקות איכות
 

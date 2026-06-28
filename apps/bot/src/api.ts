@@ -1,5 +1,6 @@
 import cors from "cors";
 import express from "express";
+import { config } from "./config";
 import {
   cancelReminder,
   createReminder,
@@ -25,6 +26,13 @@ export function createApiApp(): express.Express {
   const app = express();
   app.use(cors());
   app.use(express.json({ limit: "1mb" }));
+
+  app.use("/api", (req, res, next) => {
+    if (!config.apiSecret) return next();
+    const expected = `Bearer ${config.apiSecret}`;
+    if (req.header("authorization") === expected) return next();
+    return res.status(401).json({ error: "Unauthorized" });
+  });
 
   const getChatId = (req: express.Request): string | null => {
     const value = req.query.chat_id ?? req.body?.chat_id;

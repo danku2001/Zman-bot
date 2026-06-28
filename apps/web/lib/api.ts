@@ -1,12 +1,14 @@
 import type { Reminder, ReminderEvent, ReminderStats } from "./types";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:4000";
+const API_SECRET = process.env.NEXT_PUBLIC_API_SECRET ?? "";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(`${API_URL}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
+      ...(API_SECRET ? { Authorization: `Bearer ${API_SECRET}` } : {}),
       ...(init?.headers ?? {})
     },
     cache: "no-store"
