@@ -1,0 +1,25 @@
+{
+  "name": "zmanbot",
+  "version": "1.0.0",
+  "private": true,
+  "description": "ZmanBot monorepo - Hebrew Telegram reminder bot and dashboard",
+  "engines": {
+    "node": ">=20"
+  },
+  "workspaces": [
+    "apps/bot",
+    "apps/web"
+  ],
+  "scripts": {
+    "dev": "concurrently \"npm run dev:bot\" \"npm run dev:web\"",
+    "dev:bot": "npm run dev -w @zmanbot/bot",
+    "dev:web": "npm run dev -w @zmanbot/web",
+    "build": "npm run build -w @zmanbot/bot && npm run build -w @zmanbot/web",
+    "start": "concurrently \"npm run start -w @zmanbot/bot\" \"npm run start -w @zmanbot/web\"",
+    "lint": "npm run lint -w @zmanbot/web && npm run typecheck -w @zmanbot/bot",
+    "test": "npm run test -w @zmanbot/bot"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.2"
+  }
+}

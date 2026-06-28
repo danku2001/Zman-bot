@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: zmanbot-api
+    runtime: node
+    plan: starter
+    region: frankfurt
+    buildCommand: npm install && npm run build -w @zmanbot/bot
+    startCommand: npm run start -w @zmanbot/bot
+    healthCheckPath: /health
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: PORT
+        value: 4000
+      - key: DATABASE_PATH
+        value: /var/data/reminders.db
+      - key: TZ
+        value: Asia/Jerusalem
+      - key: NODE_ENV
+        value: production
+    disk:
+      name: zmanbot-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -1,0 +1,17 @@
+import { SettingsExport } from "../../components/SettingsExport";
+
+export default function SettingsPage() {
+  return (
+    <div className="mx-auto max-w-2xl">
+      <section className="rounded-lg border border-ink/10 bg-white p-6 shadow-soft">
+        <h1 className="text-3xl font-black text-ink">הגדרות</h1>
+        <div className="mt-5 grid gap-4 text-ink/75">
+          <p>כתובת ה-API מוגדרת דרך `NEXT_PUBLIC_API_URL`.</p>
+          <p>אזור הזמן של המערכת: Asia/Jerusalem.</p>
+          <p>ה-Chat ID נשמר בדפדפן המקומי לאחר הזנה במסכי התזכורות.</p>
+        </div>
+      </section>
+      <SettingsExport />
+    </div>
+  );
+}
