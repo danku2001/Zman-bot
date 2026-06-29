@@ -1,14 +1,36 @@
 import type { Reminder, ReminderEvent, ReminderStats } from "./types";
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "";
+export function getApiBaseUrl(): string {
+  return process.env.NEXT_PUBLIC_API_URL?.trim() || "";
+}
+
+export function getApiBaseLabel(): string {
+  const baseUrl = getApiBaseUrl();
+  return baseUrl || "same-origin /api";
+}
+
+export function getApiBaseError(): string | null {
+  const baseUrl = getApiBaseUrl();
+  if (typeof window === "undefined" || !baseUrl) return null;
+  const hostname = window.location.hostname;
+  const isLocalPage = hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+  if (!isLocalPage && /(^https?:\/\/)?(localhost|127\.0\.0\.1|\[::1\])(?::|\/|$)/i.test(baseUrl)) {
+    return "שגיאת סנכרון: הדשבורד מנסה לקרוא ל-localhost במקום לשרת הפרודקשן";
+  }
+  return null;
+}
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${API_URL}${path}`, {
+  const baseError = getApiBaseError();
+  if (baseError) throw new Error(baseError);
+
+  const response = await fetch(`${getApiBaseUrl()}${path}`, {
     ...init,
     headers: {
       "Content-Type": "application/json",
       ...(init?.headers ?? {})
     },
+    credentials: "include",
     cache: "no-store"
   });
 
@@ -65,6 +87,10 @@ export function getSyncDebug(chatId: string): Promise<{
 
 export function getKnownChats(): Promise<{ chats: Array<{ chatId: string; total: number; latestActivityAt: string | null }> }> {
   return request("/api/debug/chats");
+}
+
+export function getHealth(): Promise<{ ok: boolean; service: string; mode: string }> {
+  return request("/api/health");
 }
 
 export function parseReminder(chatId: string, message: string): Promise<{ result: unknown }> {

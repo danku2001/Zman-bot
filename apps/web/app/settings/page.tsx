@@ -1,4 +1,5 @@
 import { SettingsExport } from "../../components/SettingsExport";
+import { SyncDiagnostics } from "../../components/SyncDiagnostics";
 
 export default function SettingsPage() {
   return (
@@ -11,6 +12,7 @@ export default function SettingsPage() {
           <p>ה-Chat ID נשמר בדפדפן המקומי לאחר הזנה במסכי התזכורות.</p>
         </div>
       </section>
+      <SyncDiagnostics />
       <SettingsExport />
     </div>
   );
