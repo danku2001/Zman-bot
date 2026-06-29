@@ -71,6 +71,21 @@ https://YOUR_VERCEL_DOMAIN/api/health
 { "ok": true, "service": "zmanbot", "mode": "vercel" }
 ```
 
+### אבטחת דשבורד ו-API
+
+- `DASHBOARD_PASSWORD` מגן על ממשק הדשבורד.
+- אחרי login נוצר cookie מסוג HTTP-only. הדשבורד משתמש ב-cookie הזה כדי לגשת ל-`/api/reminders`, `/api/stats`, `/api/export`, ו-`/api/import`.
+- `API_SECRET` מיועד לגישה חיצונית ל-API, למשל סקריפט ניהול, דרך:
+
+```http
+Authorization: Bearer API_SECRET
+```
+
+- לא לחשוף `API_SECRET` בדפדפן ולא להגדיר `NEXT_PUBLIC_API_SECRET`.
+- `/api/health` ציבורי.
+- `/api/telegram/webhook` מוגן על ידי `TELEGRAM_WEBHOOK_SECRET`.
+- `/api/scheduler/run` מוגן על ידי `CRON_SECRET`.
+
 ## 4. Telegram Webhook
 
 אחרי שיש כתובת Vercel, הגדירו מקומית:

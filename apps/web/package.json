@@ -7,6 +7,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint . --max-warnings=0",
+    "test": "tsx --test lib/server/*.test.ts",
     "telegram:set-webhook": "node ../../scripts/telegram-set-webhook.mjs",
     "telegram:delete-webhook": "node ../../scripts/telegram-delete-webhook.mjs"
   },

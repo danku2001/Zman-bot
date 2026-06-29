@@ -17,7 +17,7 @@
     "build": "npm run build -w @zmanbot/bot && npm run build -w @zmanbot/web",
     "start": "concurrently \"npm run start -w @zmanbot/bot\" \"npm run start -w @zmanbot/web\"",
     "lint": "npm run lint -w @zmanbot/web && npm run typecheck -w @zmanbot/bot",
-    "test": "npm run test -w @zmanbot/bot",
+    "test": "npm run test -w @zmanbot/bot && npm run test -w @zmanbot/web",
     "telegram:set-webhook": "node scripts/telegram-set-webhook.mjs",
     "telegram:delete-webhook": "node scripts/telegram-delete-webhook.mjs"
   },

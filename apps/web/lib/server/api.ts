@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { dashboardCookieName, isValidDashboardCookie } from "./auth";
 import {
   cancelReminder,
   createReminder,
@@ -26,9 +27,11 @@ export function json(data: unknown, status = 200): NextResponse {
   return NextResponse.json(data, { status });
 }
 
-export function assertApiSecret(req: NextRequest): NextResponse | null {
-  if (!process.env.API_SECRET) return null;
-  return req.headers.get("authorization") === `Bearer ${process.env.API_SECRET}` ? null : json({ error: "Unauthorized" }, 401);
+export function assertApiAccess(req: NextRequest): NextResponse | null {
+  if (process.env.API_SECRET && req.headers.get("authorization") === `Bearer ${process.env.API_SECRET}`) return null;
+  if (isValidDashboardCookie(req.cookies.get(dashboardCookieName)?.value)) return null;
+  if (!process.env.API_SECRET && !process.env.DASHBOARD_PASSWORD) return null;
+  return json({ error: "Unauthorized" }, 401);
 }
 
 async function readBody(req: NextRequest): Promise<Record<string, unknown>> {
@@ -41,7 +44,7 @@ function chatIdFrom(req: NextRequest, body?: Record<string, unknown>): string | 
 }
 
 export async function handleGetReminders(req: NextRequest, mode?: "today" | "tomorrow" | "week" | "overdue" | "recurring" | "search"): Promise<NextResponse> {
-  const blocked = assertApiSecret(req);
+  const blocked = assertApiAccess(req);
   if (blocked) return blocked;
   const chatId = chatIdFrom(req);
   if (!chatId) return json({ error: "chat_id is required" }, 400);
@@ -65,7 +68,7 @@ export async function handleGetReminders(req: NextRequest, mode?: "today" | "tom
 }
 
 export async function handleStats(req: NextRequest): Promise<NextResponse> {
-  const blocked = assertApiSecret(req);
+  const blocked = assertApiAccess(req);
   if (blocked) return blocked;
   const chatId = chatIdFrom(req);
   if (!chatId) return json({ error: "chat_id is required" }, 400);
@@ -73,7 +76,7 @@ export async function handleStats(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function handleEvents(req: NextRequest): Promise<NextResponse> {
-  const blocked = assertApiSecret(req);
+  const blocked = assertApiAccess(req);
   if (blocked) return blocked;
   const chatId = chatIdFrom(req);
   if (!chatId) return json({ error: "chat_id is required" }, 400);
@@ -81,14 +84,14 @@ export async function handleEvents(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function handleParse(req: NextRequest): Promise<NextResponse> {
-  const blocked = assertApiSecret(req);
+  const blocked = assertApiAccess(req);
   if (blocked) return blocked;
   const body = await readBody(req);
   return json({ result: parseUserMessage(typeof body.message === "string" ? body.message : "") });
 }
 
 export async function handleCreate(req: NextRequest): Promise<NextResponse> {
-  const blocked = assertApiSecret(req);
+  const blocked = assertApiAccess(req);
   if (blocked) return blocked;
   const body = await readBody(req);
   const chatId = chatIdFrom(req, body);
@@ -110,7 +113,7 @@ export async function handleCreate(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function handleReminderAction(req: NextRequest, params: Params, action: "done" | "cancel" | "snooze" | "update" | "delete"): Promise<NextResponse> {
-  const blocked = assertApiSecret(req);
+  const blocked = assertApiAccess(req);
   if (blocked) return blocked;
   const body = action === "delete" ? {} : await readBody(req);
   const chatId = chatIdFrom(req, body);
@@ -142,7 +145,7 @@ export async function handleReminderAction(req: NextRequest, params: Params, act
 }
 
 export async function handleExport(req: NextRequest): Promise<NextResponse> {
-  const blocked = assertApiSecret(req);
+  const blocked = assertApiAccess(req);
   if (blocked) return blocked;
   const chatId = chatIdFrom(req);
   if (!chatId) return json({ error: "chat_id is required" }, 400);
@@ -150,7 +153,7 @@ export async function handleExport(req: NextRequest): Promise<NextResponse> {
 }
 
 export async function handleImport(req: NextRequest): Promise<NextResponse> {
-  const blocked = assertApiSecret(req);
+  const blocked = assertApiAccess(req);
   if (blocked) return blocked;
   const body = await readBody(req);
   const chatId = chatIdFrom(req, body);

@@ -10,3 +10,7 @@ export function dashboardCookieValue(): string {
   const password = process.env.DASHBOARD_PASSWORD ?? "";
   return crypto.createHash("sha256").update(`zmanbot:${password}`).digest("hex");
 }
+
+export function isValidDashboardCookie(value: string | undefined): boolean {
+  return dashboardEnabled() && value === dashboardCookieValue();
+}

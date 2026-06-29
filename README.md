@@ -251,13 +251,18 @@ npm run dev:web
 ה-export כולל תזכורות ו-`reminder_events`, ולא כולל secrets או משתני סביבה.
 ה-import מקבל קובץ JSON מה-export או מערך reminders, מייבא תזכורות תקינות בלבד, מחזיר כמה יובאו ואילו פריטים נכשלו, ולא דורס תזכורות קיימות.
 
-אם `API_SECRET` מוגדר, כל `/api/*` דורש:
+בפרודקשן יש שני סוגי גישה ל-API של הדשבורד:
+
+- `API_SECRET` מיועד לגישה חיצונית/סקריפטים דרך header.
+- `DASHBOARD_PASSWORD` מגן על הדשבורד. אחרי login, הדפדפן משתמש ב-cookie מסוג HTTP-only כדי לקרוא ל-`/api/reminders`, `/api/stats`, `/api/export`, `/api/import` בלי לחשוף `API_SECRET` ל-JavaScript.
+
+גישה חיצונית ל-API משתמשת ב:
 
 ```http
 Authorization: Bearer API_SECRET
 ```
 
-`/health` נשאר ציבורי כדי לאפשר health checks.
+`/api/health` נשאר ציבורי. `/api/telegram/webhook` מוגן על ידי `TELEGRAM_WEBHOOK_SECRET`, ו-`/api/scheduler/run` מוגן על ידי `CRON_SECRET`.
 
 ## בדיקות איכות
 

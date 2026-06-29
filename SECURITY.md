@@ -41,10 +41,12 @@ Do not paste secrets into README files, GitHub issues, screenshots, logs, or com
 
 ## API_SECRET
 
-`/health` is public. If `API_SECRET` is set, all `/api/*` endpoints require:
+`/api/health` is public. Dashboard API routes accept either an external API header:
 
 ```http
 Authorization: Bearer YOUR_API_SECRET
 ```
 
-For the Vercel deployment, keep `/api/*` same-origin and do not expose server secrets to browser JavaScript. Use `DASHBOARD_PASSWORD` for the dashboard login cookie and `CRON_SECRET` for `/api/scheduler/run`.
+or a valid HTTP-only dashboard auth cookie created by `DASHBOARD_PASSWORD` login. Do not expose `API_SECRET` to browser JavaScript.
+
+`/api/telegram/webhook` is protected by `TELEGRAM_WEBHOOK_SECRET`. `/api/scheduler/run` is protected by `CRON_SECRET`.
