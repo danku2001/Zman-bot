@@ -369,7 +369,18 @@ export async function cancelReminder(chatId: string, id: number): Promise<boolea
   return rows.length > 0;
 }
 
-export const deleteReminder = cancelReminder;
+export async function deleteReminder(chatId: string, id: number): Promise<boolean> {
+  await migrate();
+  const rows = await sql()`
+    DELETE FROM reminders
+    WHERE id = ${id} AND chat_id = ${chatId}
+    RETURNING id, chat_id, task, status
+  ` as Array<{ id: number; chat_id: string; task: string; status: ReminderStatus }>;
+  if (rows.length) {
+    await addEvent(id, chatId, "deleted", { task: rows[0].task, previousStatus: rows[0].status });
+  }
+  return rows.length > 0;
+}
 
 export async function snoozeReminder(chatId: string, id: number, snoozeUntil: string): Promise<Reminder | null> {
   await migrate();

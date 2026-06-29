@@ -48,6 +48,7 @@ apps/web
 3. הוסיפו Environment Variables:
 
 ```env
+APP_URL=https://YOUR_VERCEL_DOMAIN
 DATABASE_URL=postgresql://...
 TELEGRAM_BOT_TOKEN=...
 TELEGRAM_WEBHOOK_SECRET=בחרו_מחרוזת_חזקה
@@ -94,9 +95,11 @@ Authorization: Bearer API_SECRET
 ```bash
 export TELEGRAM_BOT_TOKEN="..."
 export TELEGRAM_WEBHOOK_SECRET="..."
-export TELEGRAM_WEBHOOK_URL="https://YOUR_VERCEL_DOMAIN/api/telegram/webhook"
+export APP_URL="https://YOUR_VERCEL_DOMAIN"
 npm run telegram:set-webhook
 ```
+
+אפשר גם להגדיר `TELEGRAM_WEBHOOK_URL` מלא ידנית; אם הוא לא מוגדר, הסקריפט יבנה אותו מתוך `APP_URL`.
 
 הסקריפט לא מדפיס את הטוקן.
 

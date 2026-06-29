@@ -6,7 +6,7 @@ export default function SettingsPage() {
       <section className="rounded-lg border border-ink/10 bg-white p-6 shadow-soft">
         <h1 className="text-3xl font-black text-ink">הגדרות</h1>
         <div className="mt-5 grid gap-4 text-ink/75">
-          <p>כתובת ה-API מוגדרת דרך `NEXT_PUBLIC_API_URL`.</p>
+          <p>בפרודקשן הדשבורד משתמש ב-API מאותו הדומיין, דרך cookie מאובטח אחרי התחברות.</p>
           <p>אזור הזמן של המערכת: Asia/Jerusalem.</p>
           <p>ה-Chat ID נשמר בדפדפן המקומי לאחר הזנה במסכי התזכורות.</p>
         </div>

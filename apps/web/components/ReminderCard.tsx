@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import type { Reminder } from "../lib/types";
 
 const dayNames = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -43,14 +44,38 @@ export function ReminderCard({
   reminder,
   onDone,
   onDelete,
-  onSnooze
+  onSnooze,
+  onUpdate
 }: {
   reminder: Reminder;
   onDone: (id: number) => void;
   onDelete: (id: number) => void;
   onSnooze: (id: number, minutes: number) => void;
+  onUpdate: (id: number, updates: { task: string; dueAt: string; category: string; priority: Reminder["priority"] }) => Promise<void>;
 }) {
   const recurrence = recurrenceLabel(reminder);
+  const [editing, setEditing] = useState(false);
+  const [task, setTask] = useState(reminder.task);
+  const [dueAt, setDueAt] = useState(reminder.dueAt.slice(0, 16));
+  const [category, setCategory] = useState(reminder.category);
+  const [priority, setPriority] = useState<Reminder["priority"]>(reminder.priority);
+  const [saving, setSaving] = useState(false);
+
+  async function saveEdit(event: React.FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setSaving(true);
+    try {
+      await onUpdate(reminder.id, {
+        task,
+        dueAt: dueAt.length === 16 ? `${dueAt}:00` : dueAt,
+        category,
+        priority
+      });
+      setEditing(false);
+    } finally {
+      setSaving(false);
+    }
+  }
 
   return (
     <article className="rounded-lg border border-ink/10 bg-white p-4 shadow-soft">
@@ -65,8 +90,68 @@ export function ReminderCard({
               <span className="rounded-md bg-saffron/20 px-2 py-1 text-xs font-bold text-ink">{recurrence}</span>
             ) : null}
           </div>
-          <h3 className="text-lg font-black text-ink">{reminder.task}</h3>
-          <p className="mt-1 text-sm text-ink/65">{formatDate(reminder.dueAt)}</p>
+          {editing ? (
+            <form onSubmit={(event) => void saveEdit(event)} className="mt-3 grid gap-3 sm:grid-cols-2">
+              <label className="sm:col-span-2">
+                <span className="mb-1 block text-xs font-bold text-ink/65">משימה</span>
+                <input
+                  value={task}
+                  onChange={(event) => setTask(event.target.value)}
+                  className="w-full rounded-md border border-ink/15 px-3 py-2 outline-none focus:border-mint focus:ring-4 focus:ring-mint/15"
+                  required
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-bold text-ink/65">זמן</span>
+                <input
+                  type="datetime-local"
+                  value={dueAt}
+                  onChange={(event) => setDueAt(event.target.value)}
+                  className="w-full rounded-md border border-ink/15 px-3 py-2 outline-none focus:border-mint focus:ring-4 focus:ring-mint/15"
+                  required
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-bold text-ink/65">קטגוריה</span>
+                <input
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                  className="w-full rounded-md border border-ink/15 px-3 py-2 outline-none focus:border-mint focus:ring-4 focus:ring-mint/15"
+                  required
+                />
+              </label>
+              <label>
+                <span className="mb-1 block text-xs font-bold text-ink/65">עדיפות</span>
+                <select
+                  value={priority}
+                  onChange={(event) => setPriority(event.target.value as Reminder["priority"])}
+                  className="w-full rounded-md border border-ink/15 px-3 py-2"
+                >
+                  {["נמוך", "רגיל", "חשוב", "דחוף"].map((item) => <option key={item} value={item}>{item}</option>)}
+                </select>
+              </label>
+              <div className="flex items-end gap-2">
+                <button
+                  disabled={saving}
+                  className="rounded-md bg-mint px-3 py-2 text-sm font-bold text-white transition hover:bg-mint/90 disabled:bg-ink/25"
+                >
+                  {saving ? "שומר..." : "שמור"}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditing(false)}
+                  className="rounded-md border border-ink/15 px-3 py-2 text-sm font-bold text-ink transition hover:bg-ink/5"
+                >
+                  ביטול
+                </button>
+              </div>
+            </form>
+          ) : (
+            <>
+              <h3 className="text-lg font-black text-ink">{reminder.task}</h3>
+              <p className="mt-1 text-sm text-ink/65">{formatDate(reminder.dueAt)}</p>
+            </>
+          )}
           {reminder.status === "notified" ? (
             <div className="mt-3 grid gap-1 text-sm text-ink/65">
               <p>תזכורות חוזרות: {reminder.followupCount}</p>
@@ -89,6 +174,12 @@ export function ReminderCard({
             className="rounded-md border border-mint/30 px-3 py-2 text-sm font-bold text-ink transition hover:bg-mint hover:text-white disabled:cursor-not-allowed disabled:border-ink/10 disabled:text-ink/30"
           >
             דחה 10 דק׳
+          </button>
+          <button
+            onClick={() => setEditing((value) => !value)}
+            className="rounded-md border border-ink/15 px-3 py-2 text-sm font-bold text-ink transition hover:bg-ink hover:text-white"
+          >
+            עריכה
           </button>
           <button
             onClick={() => onDelete(reminder.id)}

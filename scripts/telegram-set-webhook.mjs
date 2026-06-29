@@ -1,9 +1,10 @@
 const token = process.env.TELEGRAM_BOT_TOKEN;
-const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL;
+const appUrl = process.env.APP_URL?.replace(/\/$/, "");
+const webhookUrl = process.env.TELEGRAM_WEBHOOK_URL ?? (appUrl ? `${appUrl}/api/telegram/webhook` : "");
 const secretToken = process.env.TELEGRAM_WEBHOOK_SECRET;
 
 if (!token || !webhookUrl || !secretToken) {
-  console.error("Missing TELEGRAM_BOT_TOKEN, TELEGRAM_WEBHOOK_URL, or TELEGRAM_WEBHOOK_SECRET");
+  console.error("Missing TELEGRAM_BOT_TOKEN, APP_URL or TELEGRAM_WEBHOOK_URL, or TELEGRAM_WEBHOOK_SECRET");
   process.exit(1);
 }
 

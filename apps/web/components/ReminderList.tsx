@@ -12,7 +12,8 @@ import {
   getWeekReminders,
   markDone,
   searchReminders,
-  snoozeReminder
+  snoozeReminder,
+  updateReminder
 } from "../lib/api";
 import type { Reminder, ReminderStatus } from "../lib/types";
 import { ChatIdField, getStoredChatId } from "./ChatIdField";
@@ -95,6 +96,11 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
   async function handleSnooze(id: number, minutes: number) {
     const dueAt = localIso(new Date(Date.now() + minutes * 60_000));
     await snoozeReminder(chatId, id, dueAt);
+    await load();
+  }
+
+  async function handleUpdate(id: number, updates: { task: string; dueAt: string; category: string; priority: Reminder["priority"] }) {
+    await updateReminder(chatId, id, updates);
     await load();
   }
 
@@ -203,7 +209,7 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
       ) : null}
       <div className="grid gap-3">
         {reminders.map((reminder) => (
-          <ReminderCard key={reminder.id} reminder={reminder} onDone={handleDone} onDelete={handleDelete} onSnooze={handleSnooze} />
+          <ReminderCard key={reminder.id} reminder={reminder} onDone={handleDone} onDelete={handleDelete} onSnooze={handleSnooze} onUpdate={handleUpdate} />
         ))}
       </div>
     </section>

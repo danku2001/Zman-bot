@@ -101,6 +101,23 @@ export function snoozeReminder(chatId: string, id: number, snoozeUntil: string):
   });
 }
 
+export function updateReminder(
+  chatId: string,
+  id: number,
+  updates: Partial<Pick<Reminder, "task" | "dueAt" | "category" | "priority">>
+): Promise<{ reminder: Reminder }> {
+  return request(`/api/reminders/${id}`, {
+    method: "PATCH",
+    body: JSON.stringify({
+      chat_id: chatId,
+      task: updates.task,
+      due_at: updates.dueAt,
+      category: updates.category,
+      priority: updates.priority
+    })
+  });
+}
+
 export function exportReminders(chatId: string): Promise<{ exportedAt: string; reminders: Reminder[]; events: ReminderEvent[] }> {
   return request(`/api/export?chat_id=${encodeURIComponent(chatId)}`);
 }

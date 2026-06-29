@@ -86,6 +86,7 @@ NEXT_PUBLIC_API_URL=http://localhost:4000
 ```env
 DATABASE_URL=postgresql://...
 TELEGRAM_BOT_TOKEN=...
+APP_URL=https://YOUR_DOMAIN
 TELEGRAM_WEBHOOK_URL=https://YOUR_DOMAIN/api/telegram/webhook
 TELEGRAM_WEBHOOK_SECRET=strong-random-secret
 API_SECRET=strong-random-secret
@@ -127,7 +128,7 @@ npm run dev:web
 - ודאו שאין `TELEGRAM_BOT_TOKEN`, `API_SECRET`, או סודות אחרים בקוד.
 - ודאו ש-`node_modules`, `.next`, `dist`, `data/*.db`, וקבצי log מוחרגים ב-`.gitignore`.
 - הריצו `npm run test`, `npm run lint`, ו-`npm run build`.
-- הגדירו סודות רק ב-Render/GitHub/סביבת השרת, לא בתוך הקוד.
+- הגדירו סודות רק ב-Vercel/GitHub/סביבת השרת, לא בתוך הקוד.
 - אם טוקן Telegram דלף, סובבו אותו מיד דרך BotFather.
 
 ## הפעלה 24/7 בחינם
@@ -333,6 +334,7 @@ npm run build
 ## פתרון תקלות
 
 - אם הבוט לא מתחבר, בדקו ש-`TELEGRAM_BOT_TOKEN` נכון ושקובץ `.env` נמצא תחת `apps/bot`.
-- אם אין תזכורות בדשבורד, ודאו שה-API רץ ב-`http://localhost:4000` ושהגדרתם `NEXT_PUBLIC_API_URL`.
+- אם אין תזכורות בדשבורד בפרודקשן, התחברו לדשבורד, הריצו `/id` בטלגרם, הזינו את ה-Chat ID או השתמשו בכפתור Chat ID שהדשבורד מזהה אוטומטית.
+- אם אין תזכורות בדשבורד מקומית, ודאו שה-API רץ ב-`http://localhost:4000` ושהגדרתם `NEXT_PUBLIC_API_URL` רק לסביבת פיתוח.
 - אם זמני התזכורות נראים לא נכונים, ודאו ש-`TZ=Asia/Jerusalem`.
 - אם התקנת `better-sqlite3` נכשלת, ודאו שמותקנת גרסת Node.js עדכנית ושהמערכת יכולה לקמפל native modules.

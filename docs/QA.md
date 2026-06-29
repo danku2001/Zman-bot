@@ -8,7 +8,7 @@
 - [ ] ליצור `apps/bot/.env` מתוך `apps/bot/.env.example`.
 - [ ] לוודא ש-`TELEGRAM_BOT_TOKEN` מוגדר רק ב-`.env` או בסביבת השרת.
 - [ ] ליצור `apps/web/.env` מתוך `apps/web/.env.example`.
-- [ ] אם `API_SECRET` מוגדר בשרת, להגדיר אותו גם כ-`NEXT_PUBLIC_API_SECRET` בדשבורד.
+- [ ] לא להגדיר `NEXT_PUBLIC_API_SECRET`. הדשבורד משתמש ב-cookie מאובטח אחרי login, ו-`API_SECRET` נשאר רק בצד השרת/סקריפטים חיצוניים.
 - [ ] להריץ `npm run dev`.
 - [ ] לבדוק ש-`GET /health` מחזיר תשובה תקינה.
 
@@ -68,7 +68,8 @@
 - [ ] מיון לפי due date עובד לשני הכיוונים.
 - [ ] Mark done עובד.
 - [ ] Snooze עובד.
-- [ ] Cancel/delete עובד.
+- [ ] Cancel עובד.
+- [ ] Delete מהדשבורד מוחק מהרשימה ושומר אירוע audit.
 - [ ] Empty state ברור כאשר אין תוצאות.
 - [ ] Loading/error states נראים תקינים.
 - [ ] המסך קריא במובייל וב-RTL.
