@@ -15,6 +15,7 @@ function formatDate(value: string): string {
 function statusLabel(status: Reminder["status"]): string {
   if (status === "pending") return "ממתינה";
   if (status === "sending") return "בשליחה";
+  if (status === "notified") return "נשלחה, ממתינה לאישור";
   if (status === "done") return "בוצעה";
   return "בוטלה";
 }

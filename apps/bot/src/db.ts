@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS reminders (
   recurrence_time TEXT NULL,
   status TEXT DEFAULT 'pending',
   created_at TEXT NOT NULL,
+  sending_at TEXT NULL,
   sent_at TEXT NULL
 );
 
@@ -44,6 +45,7 @@ const requiredColumns: Record<string, string> = {
   updated_at: "TEXT",
   cancelled_at: "TEXT NULL",
   completed_at: "TEXT NULL",
+  sending_at: "TEXT NULL",
   last_snoozed_at: "TEXT NULL",
   snooze_count: "INTEGER DEFAULT 0",
   source_text: "TEXT NULL"
@@ -70,6 +72,7 @@ for (const row of rowsToNormalize) normalizeStmt.run(normalizeHebrewText(row.tas
 db.prepare("UPDATE reminders SET updated_at = COALESCE(updated_at, created_at, ?)").run(now);
 db.prepare("UPDATE reminders SET category = COALESCE(NULLIF(category, ''), 'כללי')").run();
 db.prepare("UPDATE reminders SET priority = COALESCE(NULLIF(priority, ''), 'רגיל')").run();
+db.prepare("UPDATE reminders SET sending_at = COALESCE(sending_at, updated_at, created_at, ?) WHERE status = 'sending'").run(now);
 
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_reminders_due
@@ -100,6 +103,7 @@ type ReminderRow = {
   created_at: string;
   updated_at: string;
   sent_at: string | null;
+  sending_at: string | null;
   cancelled_at: string | null;
   completed_at: string | null;
   last_snoozed_at: string | null;
@@ -136,6 +140,7 @@ function mapRow(row: ReminderRow): Reminder {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     sentAt: row.sent_at,
+    sendingAt: row.sending_at,
     cancelledAt: row.cancelled_at,
     completedAt: row.completed_at,
     lastSnoozedAt: row.last_snoozed_at,
@@ -222,22 +227,44 @@ export function getPendingDueReminders(nowIso: string, limit = 50): Reminder[] {
 }
 
 export function claimReminderForSending(id: number): boolean {
+  const timestamp = new Date().toISOString();
   const result = db
-    .prepare("UPDATE reminders SET status = 'sending', updated_at = ? WHERE id = ? AND status = 'pending'")
-    .run(new Date().toISOString(), id);
+    .prepare("UPDATE reminders SET status = 'sending', sending_at = ?, updated_at = ? WHERE id = ? AND status = 'pending'")
+    .run(timestamp, timestamp, id);
   return result.changes > 0;
 }
 
 export function releaseReminderAfterSendFailure(id: number): void {
-  db.prepare("UPDATE reminders SET status = 'pending', updated_at = ? WHERE id = ? AND status = 'sending'").run(
+  db.prepare("UPDATE reminders SET status = 'pending', sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'").run(
     new Date().toISOString(),
     id
   );
 }
 
+export function recoverStaleSendingReminders(cutoffIso?: string): number {
+  const cutoff =
+    cutoffIso ??
+    new Date(Date.now() - 5 * 60_000).toISOString();
+  const stale = db
+    .prepare("SELECT id, chat_id FROM reminders WHERE status = 'sending' AND sending_at IS NOT NULL AND sending_at < ?")
+    .all(cutoff) as Array<{ id: number; chat_id: string }>;
+  if (stale.length === 0) return 0;
+  const timestamp = new Date().toISOString();
+  const recover = db.prepare("UPDATE reminders SET status = 'pending', sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'");
+  for (const reminder of stale) {
+    const result = recover.run(timestamp, reminder.id);
+    if (result.changes > 0) addEvent(reminder.id, reminder.chat_id, "send_recovered", { cutoffIso: cutoff });
+  }
+  return stale.length;
+}
+
 export function getRemindersByChatId(chatId: string): Reminder[] {
   const rows = db
-    .prepare("SELECT * FROM reminders WHERE chat_id = ? ORDER BY status ASC, due_at ASC")
+    .prepare(
+      `SELECT * FROM reminders
+       WHERE chat_id = ?
+       ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'sending' THEN 1 WHEN 'notified' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, due_at ASC`
+    )
     .all(chatId) as ReminderRow[];
   return rows.map(mapRow);
 }
@@ -280,7 +307,7 @@ export function getRecurringRemindersByChatId(chatId: string): Reminder[] {
 
 export function getOverdueRemindersByChatId(chatId: string, nowIso = localIso()): Reminder[] {
   const rows = db
-    .prepare("SELECT * FROM reminders WHERE chat_id = ? AND status IN ('pending', 'sending') AND due_at < ? ORDER BY due_at ASC")
+    .prepare("SELECT * FROM reminders WHERE chat_id = ? AND status = 'pending' AND due_at < ? ORDER BY due_at ASC")
     .all(chatId, nowIso) as ReminderRow[];
   return rows.map(mapRow);
 }
@@ -299,7 +326,7 @@ export function searchRemindersByChatId(chatId: string, query: string): Reminder
     .prepare(
       `SELECT * FROM reminders
        WHERE chat_id = ? AND (normalized_task LIKE ? OR task LIKE ? OR category LIKE ? OR priority LIKE ?)
-       ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'sending' THEN 1 WHEN 'done' THEN 2 ELSE 3 END, due_at ASC`
+       ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'sending' THEN 1 WHEN 'notified' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, due_at ASC`
     )
     .all(chatId, `%${normalizedQuery}%`, `%${query}%`, `%${query}%`, `%${query}%`) as ReminderRow[];
   return rows.map(mapRow);
@@ -308,7 +335,7 @@ export function searchRemindersByChatId(chatId: string, query: string): Reminder
 export function findMatchingReminders(chatId: string, target: string): Reminder[] {
   const normalizedTarget = normalizeHebrewText(target);
   if (!normalizedTarget) return [];
-  const reminders = getRemindersByChatId(chatId).filter((reminder) => reminder.status === "pending" || reminder.status === "sending");
+  const reminders = getRemindersByChatId(chatId).filter((reminder) => reminder.status !== "cancelled");
   return reminders
     .map((reminder) => {
       const exact = reminder.normalizedTask === normalizedTarget ? 100 : 0;
@@ -325,7 +352,7 @@ export function findMatchingReminders(chatId: string, target: string): Reminder[
 export function markReminderDone(chatId: string, id: number): boolean {
   const timestamp = new Date().toISOString();
   const result = db
-    .prepare("UPDATE reminders SET status = 'done', completed_at = ?, updated_at = ? WHERE id = ? AND chat_id = ?")
+    .prepare("UPDATE reminders SET status = 'done', sending_at = NULL, completed_at = ?, updated_at = ? WHERE id = ? AND chat_id = ?")
     .run(timestamp, timestamp, id, chatId);
   if (result.changes > 0) addEvent(id, chatId, "completed");
   return result.changes > 0;
@@ -336,7 +363,7 @@ export function markReminderDoneById(id: number): boolean {
   if (!reminder) return false;
   const timestamp = new Date().toISOString();
   const result = db
-    .prepare("UPDATE reminders SET status = 'done', sent_at = COALESCE(sent_at, ?), completed_at = ?, updated_at = ? WHERE id = ?")
+    .prepare("UPDATE reminders SET status = 'done', sent_at = COALESCE(sent_at, ?), sending_at = NULL, completed_at = ?, updated_at = ? WHERE id = ?")
     .run(timestamp, timestamp, timestamp, id);
   if (result.changes > 0) addEvent(id, reminder.chatId, "completed");
   return result.changes > 0;
@@ -345,7 +372,7 @@ export function markReminderDoneById(id: number): boolean {
 export function cancelReminder(chatId: string, id: number): boolean {
   const timestamp = new Date().toISOString();
   const result = db
-    .prepare("UPDATE reminders SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ? AND chat_id = ?")
+    .prepare("UPDATE reminders SET status = 'cancelled', sending_at = NULL, cancelled_at = ?, updated_at = ? WHERE id = ? AND chat_id = ?")
     .run(timestamp, timestamp, id, chatId);
   if (result.changes > 0) addEvent(id, chatId, "cancelled");
   return result.changes > 0;
@@ -358,8 +385,8 @@ export function snoozeReminder(chatId: string, id: number, snoozeUntil: string):
   const result = db
     .prepare(
       `UPDATE reminders
-       SET due_at = ?, status = 'pending', last_snoozed_at = ?, snooze_count = COALESCE(snooze_count, 0) + 1, updated_at = ?
-       WHERE id = ? AND chat_id = ?`
+       SET due_at = ?, status = 'pending', sending_at = NULL, last_snoozed_at = ?, snooze_count = COALESCE(snooze_count, 0) + 1, updated_at = ?
+       WHERE id = ? AND chat_id = ? AND status IN ('pending', 'sending', 'notified')`
     )
     .run(snoozeUntil, timestamp, timestamp, id, chatId);
   if (result.changes === 0) return null;
@@ -402,8 +429,8 @@ export function clearDoneRemindersByChatId(chatId: string): number {
 }
 
 export function cancelTodayRemindersByChatId(chatId: string): number {
-  const today = getTodayRemindersByChatId(chatId).filter((reminder) => reminder.status === "pending");
-  const cancel = db.prepare("UPDATE reminders SET status = 'cancelled', cancelled_at = ?, updated_at = ? WHERE id = ?");
+  const today = getTodayRemindersByChatId(chatId).filter((reminder) => reminder.status !== "cancelled");
+  const cancel = db.prepare("UPDATE reminders SET status = 'cancelled', sending_at = NULL, cancelled_at = ?, updated_at = ? WHERE id = ?");
   const timestamp = new Date().toISOString();
   for (const reminder of today) {
     cancel.run(timestamp, timestamp, reminder.id);
@@ -430,19 +457,25 @@ export function rescheduleRecurringReminder(reminder: Reminder): Reminder {
   );
 
   const timestamp = new Date().toISOString();
-  db.prepare("UPDATE reminders SET due_at = ?, status = 'pending', sent_at = ?, updated_at = ? WHERE id = ?").run(
+  db.prepare("UPDATE reminders SET due_at = ?, status = 'pending', sent_at = ?, sending_at = NULL, updated_at = ? WHERE id = ?").run(
     nextDueAt,
     timestamp,
     timestamp,
     reminder.id
   );
+  addEvent(reminder.id, reminder.chatId, "sent", { dueAt: reminder.dueAt });
   addEvent(reminder.id, reminder.chatId, "rescheduled", { nextDueAt });
 
   return getReminderById(reminder.id)!;
 }
 
-export function markReminderSent(reminder: Reminder): void {
-  addEvent(reminder.id, reminder.chatId, "sent", { dueAt: reminder.dueAt });
+export function markReminderNotifiedAfterSend(reminder: Reminder): boolean {
+  const timestamp = new Date().toISOString();
+  const result = db
+    .prepare("UPDATE reminders SET status = 'notified', sent_at = ?, sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'")
+    .run(timestamp, timestamp, reminder.id);
+  if (result.changes > 0) addEvent(reminder.id, reminder.chatId, "sent", { dueAt: reminder.dueAt });
+  return result.changes > 0;
 }
 
 export function getStatsByChatId(chatId: string, now = new Date()): ReminderStats {
@@ -450,7 +483,7 @@ export function getStatsByChatId(chatId: string, now = new Date()): ReminderStat
   const todayIds = new Set(getTodayRemindersByChatId(chatId, now).map((reminder) => reminder.id));
   const tomorrowIds = new Set(getTomorrowRemindersByChatId(chatId, now).map((reminder) => reminder.id));
   const weekIds = new Set(getWeekRemindersByChatId(chatId, now).map((reminder) => reminder.id));
-  const active = reminders.filter((reminder) => reminder.status === "pending" || reminder.status === "sending");
+  const active = reminders.filter((reminder) => reminder.status === "pending" || reminder.status === "sending" || reminder.status === "notified");
   const categories = active.reduce<Record<string, number>>((acc, reminder) => {
     acc[reminder.category] = (acc[reminder.category] ?? 0) + 1;
     return acc;

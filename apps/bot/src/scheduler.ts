@@ -3,8 +3,8 @@ import type { Telegraf } from "telegraf";
 import {
   claimReminderForSending,
   getPendingDueReminders,
-  markReminderDoneById,
-  markReminderSent,
+  markReminderNotifiedAfterSend,
+  recoverStaleSendingReminders,
   releaseReminderAfterSendFailure,
   rescheduleRecurringReminder
 } from "./db";
@@ -17,7 +17,12 @@ function nowLocalIso(): string {
 }
 
 export function startScheduler(bot: Telegraf): void {
+  recoverStaleSendingReminders();
+
   cron.schedule("*/30 * * * * *", async () => {
+    const recovered = recoverStaleSendingReminders();
+    if (recovered > 0) logger.warn("Recovered stale sending reminders", { count: recovered });
+
     const due = getPendingDueReminders(nowLocalIso());
 
     for (const reminder of due) {
@@ -29,13 +34,12 @@ export function startScheduler(bot: Telegraf): void {
           isRecurring ? `⏰ תזכורת קבועה: ${reminder.task}` : `⏰ תזכורת: ${reminder.task}`,
           sentReminderKeyboard(reminder.id)
         );
-        markReminderSent(reminder);
         if (reminder.recurrenceType) {
           const next = rescheduleRecurringReminder(reminder);
           await bot.telegram.sendMessage(reminder.chatId, `התזכורת הבאה נקבעה ל-${next.dueAt.replace("T", " ")}`);
           logger.info("Recurring reminder sent and rescheduled", { id: reminder.id, nextDueAt: next.dueAt });
         } else {
-          markReminderDoneById(reminder.id);
+          markReminderNotifiedAfterSend(reminder);
           logger.info("Reminder sent", { id: reminder.id, chatId: reminder.chatId });
         }
       } catch (error) {

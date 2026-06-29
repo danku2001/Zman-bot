@@ -1,4 +1,4 @@
-export type ReminderStatus = "pending" | "sending" | "done" | "cancelled";
+export type ReminderStatus = "pending" | "sending" | "notified" | "done" | "cancelled";
 export type RecurrenceType = "daily" | "weekly" | "monthly" | "yearly" | "custom_weekdays";
 export type ReminderPriority = "רגיל" | "חשוב" | "דחוף";
 
@@ -20,6 +20,7 @@ export interface Reminder {
   createdAt: string;
   updatedAt: string;
   sentAt: string | null;
+  sendingAt: string | null;
   cancelledAt: string | null;
   completedAt: string | null;
   lastSnoozedAt: string | null;

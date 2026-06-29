@@ -63,6 +63,7 @@ function recurrenceLabel(reminder: Reminder): string {
 function statusLabel(reminder: Reminder): string {
   if (reminder.status === "pending") return "פתוחה";
   if (reminder.status === "sending") return "בשליחה";
+  if (reminder.status === "notified") return "נשלחה";
   if (reminder.status === "done") return "בוצעה";
   return "בוטלה";
 }
@@ -74,7 +75,7 @@ function formatReminder(reminder: Reminder, index?: number): string {
 
 function reminderKeyboard(reminders: Reminder[]) {
   const reminderRows = reminders
-    .filter((reminder) => reminder.status === "pending" || reminder.status === "sending")
+    .filter((reminder) => reminder.status === "pending" || reminder.status === "sending" || reminder.status === "notified")
     .slice(0, 8)
     .flatMap((reminder) => [
       [
@@ -182,7 +183,7 @@ async function sendReminderList(chatId: string, reply: ReplyFn, title: string, r
     await reply(`${title}\nאין תזכורות להצגה.`);
     return;
   }
-  const open = reminders.filter((reminder) => reminder.status === "pending" || reminder.status === "sending");
+  const open = reminders.filter((reminder) => reminder.status === "pending" || reminder.status === "sending" || reminder.status === "notified");
   const lines = reminders.slice(0, 12).map(formatReminder).join("\n");
   await reply(`${title}\nיש לך ${open.length} תזכורות פתוחות:\n\n${lines}\n\nאפשר לבטל לפי מספר או טקסט. למשל: בטל את #2`, reminderKeyboard(reminders));
 }
@@ -409,7 +410,7 @@ bot.action(/^confirm_bulk:(yes|no)$/, async (ctx) => {
       : pending.action === "cancel_today"
         ? cancelTodayRemindersByChatId(chatId)
         : getRemindersByChatId(chatId)
-            .filter((reminder) => reminder.status === "pending" || reminder.status === "sending")
+            .filter((reminder) => reminder.status !== "cancelled")
             .reduce((total, reminder) => total + (cancelReminder(chatId, reminder.id) ? 1 : 0), 0);
   await ctx.reply(`בוצע ✅\nעודכנו ${count} תזכורות.`);
 });
