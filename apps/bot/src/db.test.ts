@@ -12,13 +12,17 @@ const {
   claimReminderForSending,
   createReminder,
   db,
+  cancelReminder,
+  findMatchingReminders,
   getReminderEventsByChatId,
   getOverdueRemindersByChatId,
   getReminderById,
+  importReminders,
   markReminderDone,
   markReminderNotifiedAfterSend,
   recoverStaleSendingReminders,
   rescheduleRecurringReminder,
+  searchRemindersByChatId,
   snoozeReminder
 } = dbModule;
 
@@ -105,4 +109,28 @@ test("notified reminders are not overdue after they were already sent", () => {
   const overdue = getOverdueRemindersByChatId("test-chat", "2026-06-29T12:00:00");
 
   assert.equal(overdue.some((item) => item.id === reminder.id), false);
+});
+
+test("search and cancel by partial text find matching reminders", () => {
+  const reminder = createTestReminder({ task: "לשלוח חשבונית לרוני" });
+
+  const search = searchRemindersByChatId("test-chat", "חשבונית");
+  const matches = findMatchingReminders("test-chat", "חשבונית");
+
+  assert.equal(search.some((item) => item.id === reminder.id), true);
+  assert.equal(matches[0]?.id, reminder.id);
+  assert.equal(cancelReminder("test-chat", reminder.id), true);
+  assert.equal(getReminderById(reminder.id)?.status, "cancelled");
+});
+
+test("import validates items and keeps valid reminders", () => {
+  const result = importReminders("test-chat", [
+    { task: "תקין ליבוא", dueAt: "2026-07-01T09:00:00", recurrence: null },
+    { task: "", dueAt: "2026-07-01T09:00:00" },
+    { task: "תאריך שבור", dueAt: "not-a-date" }
+  ]);
+
+  assert.equal(result.imported.length, 1);
+  assert.equal(result.errors.length, 2);
+  assert.equal(result.imported[0].task, "תקין ליבוא");
 });

@@ -501,6 +501,7 @@ export function getStatsByChatId(chatId: string, now = new Date()): ReminderStat
     dueTomorrow: reminders.filter((reminder) => tomorrowIds.has(reminder.id)).length,
     dueThisWeek: reminders.filter((reminder) => weekIds.has(reminder.id)).length,
     recurring: reminders.filter((reminder) => reminder.recurrenceType).length,
+    notified: reminders.filter((reminder) => reminder.status === "notified").length,
     done: reminders.filter((reminder) => reminder.status === "done").length,
     cancelled: reminders.filter((reminder) => reminder.status === "cancelled").length,
     overdue: getOverdueRemindersByChatId(chatId, localIso(now)).length,
@@ -530,6 +531,18 @@ export function importReminders(chatId: string, reminders: unknown[]): { importe
     const reminder = item as Partial<ParsedReminder>;
     if (!reminder || typeof reminder.task !== "string" || typeof reminder.dueAt !== "string") {
       errors.push(`פריט ${index + 1}: חסרים task או dueAt`);
+      return;
+    }
+    if (!reminder.task.trim()) {
+      errors.push(`פריט ${index + 1}: task ריק`);
+      return;
+    }
+    if (Number.isNaN(Date.parse(reminder.dueAt))) {
+      errors.push(`פריט ${index + 1}: dueAt לא תקין`);
+      return;
+    }
+    if (reminder.recurrence !== undefined && reminder.recurrence !== null && typeof reminder.recurrence !== "object") {
+      errors.push(`פריט ${index + 1}: recurrence לא תקין`);
       return;
     }
     imported.push(

@@ -146,6 +146,14 @@ function buildDate(base: Date, dayOffset: number, hour: number, minute: number):
   return date;
 }
 
+function defaultTimeForDayPart(dayPart: string): { hour: number; minute: number } {
+  if (dayPart === "בבוקר" || dayPart === "בוקר") return { hour: 9, minute: 0 };
+  if (dayPart === "בצהריים" || dayPart === "בצהרים" || dayPart === "צהריים" || dayPart === "צהרים") return { hour: 14, minute: 0 };
+  if (dayPart === "בערב" || dayPart === "ערב") return { hour: 20, minute: 0 };
+  if (dayPart === "בלילה" || dayPart === "לילה") return { hour: 22, minute: 0 };
+  return { hour: defaultReminderHour, minute: defaultReminderMinute };
+}
+
 function buildCalendarDate(base: Date, day: number, month: number, yearText?: string, hour = defaultReminderHour, minute = defaultReminderMinute): Date | null {
   const year = yearText ? Number(yearText) : base.getFullYear();
   if (!Number.isInteger(day) || !Number.isInteger(year) || day < 1 || day > 31 || year < 2000 || year > 2100) return null;
@@ -241,17 +249,26 @@ function success(value: ParsedReminder): ParseResult {
 export function parseReminderMessage(message: string, now = new Date()): ParseResult {
   const text = cleanPrefix(message);
 
-  const relativeMatch = text.match(/^עוד\s+(?:(\d+)|דקה|שעה|שעתיים)\s*(דקות?|שעות?)?\s+(.+)$/u);
+  const relativeMatch = text.match(/^(?:עוד|בעוד)\s+(?:(\d+)\s*(דקות?|שעות?|ימים?|שבועות?)|דקה|רבע\s+שעה|חצי\s+שעה|שעה|שעתיים|יום|יומיים|שבוע|שבועיים)\s+(.+)$/u);
   if (relativeMatch) {
     const [, amountText, unitText, rawTask] = relativeMatch;
     let minutes = 0;
-    if (text.startsWith("עוד דקה")) minutes = 1;
-    else if (text.startsWith("עוד שעה")) minutes = 60;
-    else if (text.startsWith("עוד שעתיים")) minutes = 120;
+    if (/^(?:עוד|בעוד)\s+דקה/u.test(text)) minutes = 1;
+    else if (/^(?:עוד|בעוד)\s+רבע\s+שעה/u.test(text)) minutes = 15;
+    else if (/^(?:עוד|בעוד)\s+חצי\s+שעה/u.test(text)) minutes = 30;
+    else if (/^(?:עוד|בעוד)\s+שעה/u.test(text)) minutes = 60;
+    else if (/^(?:עוד|בעוד)\s+שעתיים/u.test(text)) minutes = 120;
+    else if (/^(?:עוד|בעוד)\s+יומיים/u.test(text)) minutes = 2 * 24 * 60;
+    else if (/^(?:עוד|בעוד)\s+יום/u.test(text)) minutes = 24 * 60;
+    else if (/^(?:עוד|בעוד)\s+שבועיים/u.test(text)) minutes = 14 * 24 * 60;
+    else if (/^(?:עוד|בעוד)\s+שבוע/u.test(text)) minutes = 7 * 24 * 60;
     else {
       const amount = Number(amountText);
       const unit = unitText ?? "דקות";
-      minutes = unit.startsWith("שע") ? amount * 60 : amount;
+      if (unit.startsWith("שע")) minutes = amount * 60;
+      else if (unit.startsWith("יו")) minutes = amount * 24 * 60;
+      else if (unit.startsWith("שבו")) minutes = amount * 7 * 24 * 60;
+      else minutes = amount;
     }
 
     const task = normalizeTask(rawTask);
@@ -278,6 +295,17 @@ export function parseReminderMessage(message: string, now = new Date()): ParseRe
     return success({ task, dueAt: toIsoLocal(addMonths(now, months, parsedTime.hour, parsedTime.minute)), recurrence: null });
   }
 
+  const dailyDayPartMatch = text.match(/^כל\s+(בוקר|ערב|לילה)\s+(.+)$/u);
+  if (dailyDayPartMatch) {
+    const parsed = defaultTimeForDayPart(dailyDayPartMatch[1]);
+    const task = normalizeTask(dailyDayPartMatch[2]);
+    if (!task) return { ok: false, error: helpfulError };
+    let due = buildDate(now, 0, parsed.hour, parsed.minute);
+    if (due <= now) due = buildDate(now, 1, parsed.hour, parsed.minute);
+    const recurrence: Recurrence = { type: "daily", time: `${pad(parsed.hour)}:${pad(parsed.minute)}` };
+    return success({ task, dueAt: toIsoLocal(due), recurrence, sourceText: message });
+  }
+
   const dailyMatch = text.match(new RegExp(`^כל\\s+יום\\s+${timePrefix}${timePattern}\\s+(.+)$`, "u"));
   if (dailyMatch) {
     const parsed = parseTime(dailyMatch[1], undefined, dailyMatch[2], dailyMatch[3]);
@@ -287,6 +315,18 @@ export function parseReminderMessage(message: string, now = new Date()): ParseRe
     if (due <= now) due = buildDate(now, 1, parsed.hour, parsed.minute);
     const recurrence: Recurrence = { type: "daily", time: `${pad(parsed.hour)}:${pad(parsed.minute)}` };
     return success({ task, dueAt: toIsoLocal(due), recurrence, sourceText: message });
+  }
+
+  const weeklyEveryWeekMatch = text.match(
+    new RegExp(`^כל\\s+שבוע\\s+ביום\\s+(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)\\s+${timePrefix}${timePattern}\\s+(.+)$`, "u")
+  );
+  if (weeklyEveryWeekMatch) {
+    const dayOfWeek = dayNames.get(weeklyEveryWeekMatch[1]);
+    const parsed = parseTime(weeklyEveryWeekMatch[2], undefined, weeklyEveryWeekMatch[3], weeklyEveryWeekMatch[4]);
+    const task = normalizeTask(weeklyEveryWeekMatch[5]);
+    if (dayOfWeek === undefined || !parsed || !task) return { ok: false, error: helpfulError };
+    const recurrence: Recurrence = { type: "weekly", dayOfWeek, time: `${pad(parsed.hour)}:${pad(parsed.minute)}` };
+    return success({ task, dueAt: toIsoLocal(nextWeeklyDate(now, dayOfWeek, parsed.hour, parsed.minute)), recurrence, sourceText: message });
   }
 
   const weeklyRecurringMatch = text.match(
@@ -343,6 +383,16 @@ export function parseReminderMessage(message: string, now = new Date()): ParseRe
     return success({ task, dueAt: toIsoLocal(next), recurrence, sourceText: message });
   }
 
+  const dayPartMatch = text.match(/^(היום|מחר)\s+(בבוקר|בוקר|בצהריים|בצהרים|צהריים|צהרים|בערב|ערב|בלילה|לילה)\s+(.+)$/u);
+  if (dayPartMatch) {
+    const parsed = defaultTimeForDayPart(dayPartMatch[2]);
+    const task = normalizeTask(dayPartMatch[3]);
+    if (!task) return { ok: false, error: helpfulError };
+    let due = buildDate(now, dayPartMatch[1] === "מחר" ? 1 : 0, parsed.hour, parsed.minute);
+    if (due <= now) due = buildDate(now, 1, parsed.hour, parsed.minute);
+    return success({ task, dueAt: toIsoLocal(due), recurrence: null, sourceText: message });
+  }
+
   const dayMatch = text.match(
     new RegExp(`^(היום|מחר|ביום\\s+(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת))\\s+${timePrefix}${timePattern}\\s+(.+)$`, "u")
   );
@@ -363,6 +413,17 @@ export function parseReminderMessage(message: string, now = new Date()): ParseRe
       if (dayOfWeek === undefined) return { ok: false, error: helpfulError };
       due = nextWeeklyDate(now, dayOfWeek, parsed.hour, parsed.minute);
     }
+    return success({ task, dueAt: toIsoLocal(due), recurrence: null, sourceText: message });
+  }
+
+  const nextWeekdayMatch = text.match(new RegExp(`^(ראשון|שני|שלישי|רביעי|חמישי|שישי|שבת)\\s+הבא\\s+${timePrefix}${timePattern}\\s+(.+)$`, "u"));
+  if (nextWeekdayMatch) {
+    const dayOfWeek = dayNames.get(nextWeekdayMatch[1]);
+    const parsed = parseTime(nextWeekdayMatch[2], undefined, nextWeekdayMatch[3], nextWeekdayMatch[4]);
+    const task = normalizeTask(nextWeekdayMatch[5]);
+    if (dayOfWeek === undefined || !parsed || !task) return { ok: false, error: helpfulError };
+    let due = nextWeeklyDate(now, dayOfWeek, parsed.hour, parsed.minute);
+    if ((dayOfWeek - now.getDay() + 7) % 7 === 0) due = buildDate(now, 7, parsed.hour, parsed.minute);
     return success({ task, dueAt: toIsoLocal(due), recurrence: null, sourceText: message });
   }
 

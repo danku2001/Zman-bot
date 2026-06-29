@@ -38,6 +38,8 @@ export function HomeDashboard() {
         ["באיחור", stats.overdue, "/overdue"],
         ["השבוע", stats.dueThisWeek, "/week"],
         ["קבועות", stats.recurring, "/recurring"],
+        ["נשלחו", stats.notified, "/reminders"],
+        ["בוטלו", stats.cancelled, "/cancelled"],
         ["בוצעו", stats.done, "/done"]
       ]
     : [];

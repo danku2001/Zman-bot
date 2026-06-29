@@ -38,11 +38,13 @@ function priorityLabel(reminder: Reminder): string {
 export function ReminderCard({
   reminder,
   onDone,
-  onDelete
+  onDelete,
+  onSnooze
 }: {
   reminder: Reminder;
   onDone: (id: number) => void;
   onDelete: (id: number) => void;
+  onSnooze: (id: number, minutes: number) => void;
 }) {
   const recurrence = recurrenceLabel(reminder);
 
@@ -62,13 +64,20 @@ export function ReminderCard({
           <h3 className="text-lg font-black text-ink">{reminder.task}</h3>
           <p className="mt-1 text-sm text-ink/65">{formatDate(reminder.dueAt)}</p>
         </div>
-        <div className="flex shrink-0 gap-2">
+        <div className="flex shrink-0 flex-wrap gap-2">
           <button
             onClick={() => onDone(reminder.id)}
             disabled={reminder.status === "done"}
             className="rounded-md bg-mint px-3 py-2 text-sm font-bold text-white transition hover:bg-mint/90 disabled:cursor-not-allowed disabled:bg-ink/25"
           >
             בוצע
+          </button>
+          <button
+            onClick={() => onSnooze(reminder.id, 10)}
+            disabled={reminder.status === "done" || reminder.status === "cancelled"}
+            className="rounded-md border border-mint/30 px-3 py-2 text-sm font-bold text-ink transition hover:bg-mint hover:text-white disabled:cursor-not-allowed disabled:border-ink/10 disabled:text-ink/30"
+          >
+            דחה 10 דק׳
           </button>
           <button
             onClick={() => onDelete(reminder.id)}

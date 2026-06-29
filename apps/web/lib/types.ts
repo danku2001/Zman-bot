@@ -34,6 +34,7 @@ export interface ReminderStats {
   dueTomorrow: number;
   dueThisWeek: number;
   recurring: number;
+  notified: number;
   done: number;
   cancelled: number;
   overdue: number;

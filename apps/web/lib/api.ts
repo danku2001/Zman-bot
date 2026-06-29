@@ -92,3 +92,13 @@ export function snoozeReminder(chatId: string, id: number, snoozeUntil: string):
 export function exportReminders(chatId: string): Promise<{ exportedAt: string; reminders: Reminder[]; events: ReminderEvent[] }> {
   return request(`/api/export?chat_id=${encodeURIComponent(chatId)}`);
 }
+
+export function importReminders(
+  chatId: string,
+  reminders: unknown[]
+): Promise<{ importedCount: number; errors: string[]; reminders: Reminder[] }> {
+  return request("/api/import", {
+    method: "POST",
+    body: JSON.stringify({ chat_id: chatId, reminders })
+  });
+}

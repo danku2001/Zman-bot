@@ -13,8 +13,17 @@ function parsed(message: string) {
 }
 
 test("parses relative reminders", () => {
+  assert.equal(parsed("תזכיר לי עוד דקה לבדוק").dueAt, "2026-06-29T10:01:00");
+  assert.equal(parsed("תזכיר לי עוד 5 דקות לשתות מים").dueAt, "2026-06-29T10:05:00");
+  assert.equal(parsed("תזכיר לי בעוד רבע שעה לצאת").dueAt, "2026-06-29T10:15:00");
+  assert.equal(parsed("תזכיר לי בעוד חצי שעה להתקשר").dueAt, "2026-06-29T10:30:00");
   assert.equal(parsed("תזכיר לי עוד 10 דקות לשתות מים").dueAt, "2026-06-29T10:10:00");
+  assert.equal(parsed("תזכיר לי עוד שעה להתקשר לאמא").dueAt, "2026-06-29T11:00:00");
   assert.equal(parsed("תזכיר לי עוד שעתיים לחזור ללקוח").dueAt, "2026-06-29T12:00:00");
+  assert.equal(parsed("תזכיר לי עוד יום לבדוק משהו").dueAt, "2026-06-30T10:00:00");
+  assert.equal(parsed("תזכיר לי עוד יומיים לבדוק משהו").dueAt, "2026-07-01T10:00:00");
+  assert.equal(parsed("תזכיר לי עוד שבוע להתקשר").dueAt, "2026-07-06T10:00:00");
+  assert.equal(parsed("תזכיר לי עוד שבועיים להתקשר").dueAt, "2026-07-13T10:00:00");
 });
 
 test("parses numeric absolute reminders", () => {
@@ -24,11 +33,16 @@ test("parses numeric absolute reminders", () => {
 });
 
 test("parses Hebrew word hours with day parts", () => {
+  assert.equal(parsed("תזכיר לי היום בערב ללכת לאימון").dueAt, "2026-06-29T20:00:00");
+  assert.equal(parsed("תזכיר לי מחר בבוקר לסדר תיק").dueAt, "2026-06-30T09:00:00");
+  assert.equal(parsed("תזכיר לי מחר בצהריים לבדוק דוחות").dueAt, "2026-06-30T14:00:00");
+  assert.equal(parsed("תזכיר לי מחר בערב להתקשר לדני").dueAt, "2026-06-30T20:00:00");
   assert.equal(parsed("תזכיר לי מחר בשעה שתיים בצהריים לעשות ככה ככה וככה").dueAt, "2026-06-30T14:00:00");
   assert.equal(parsed("תזכיר לי מחר בשעה שתיים בצהריים לעשות ככה ככה וככה").task, "לעשות ככה ככה וככה");
   assert.equal(parsed("תזכיר לי היום בשעה שמונה בערב ללכת לאימון").dueAt, "2026-06-29T20:00:00");
   assert.equal(parsed("תזכיר לי מחר בשעה תשע בבוקר לשלוח מייל").dueAt, "2026-06-30T09:00:00");
   assert.equal(parsed("תזכיר לי מחר בשעה שתיים וחצי בצהריים פגישה").dueAt, "2026-06-30T14:30:00");
+  assert.equal(parsed("שני הבא ב-14:00 פגישה").dueAt, "2026-07-06T14:00:00");
 });
 
 test("parses flexible numeric time writing styles", () => {
@@ -69,11 +83,23 @@ test("parses long relative calendar reminders", () => {
 });
 
 test("parses recurring reminders with natural time", () => {
+  const dailyShort = parsed("תזכיר לי כל יום ב-8 לשתות מים");
+  assert.deepEqual(dailyShort.recurrence, { type: "daily", time: "08:00" });
+
   const daily = parsed("תזכיר לי כל יום בשעה שמונה בבוקר לקחת תיק");
   assert.deepEqual(daily.recurrence, { type: "daily", time: "08:00" });
 
+  const morning = parsed("תזכיר לי כל בוקר לשתות מים");
+  assert.deepEqual(morning.recurrence, { type: "daily", time: "09:00" });
+
+  const evening = parsed("תזכיר לי כל ערב לבדוק מיילים");
+  assert.deepEqual(evening.recurrence, { type: "daily", time: "20:00" });
+
   const weekly = parsed("תזכיר לי כל יום ראשון בשעה תשע בבוקר ישיבת צוות");
   assert.deepEqual(weekly.recurrence, { type: "weekly", dayOfWeek: 0, time: "09:00" });
+
+  const weeklyEveryWeek = parsed("תזכיר לי כל שבוע ביום ראשון ב-9 לבדוק דוחות");
+  assert.deepEqual(weeklyEveryWeek.recurrence, { type: "weekly", dayOfWeek: 0, time: "09:00" });
 
   const flexibleWeekly = parsed("תזכיר לי כל יום ראשון 9 בבוקר ישיבת צוות");
   assert.deepEqual(flexibleWeekly.recurrence, { type: "weekly", dayOfWeek: 0, time: "09:00" });
