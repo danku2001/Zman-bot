@@ -63,6 +63,10 @@ export function getSyncDebug(chatId: string): Promise<{
   return request(`/api/debug/sync?chat_id=${encodeURIComponent(chatId)}`);
 }
 
+export function getKnownChats(): Promise<{ chats: Array<{ chatId: string; total: number; latestActivityAt: string | null }> }> {
+  return request("/api/debug/chats");
+}
+
 export function parseReminder(chatId: string, message: string): Promise<{ result: unknown }> {
   return request("/api/reminders/parse", {
     method: "POST",

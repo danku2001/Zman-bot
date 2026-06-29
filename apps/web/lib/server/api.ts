@@ -7,6 +7,7 @@ import {
   getOverdueRemindersByChatId,
   getRecurringRemindersByChatId,
   getReminderEventsByChatId,
+  getKnownChats,
   getRemindersByChatId,
   getSyncDebugByChatId,
   getStatsByChatId,
@@ -170,4 +171,10 @@ export async function handleSyncDebug(req: NextRequest): Promise<NextResponse> {
   const chatId = chatIdFrom(req);
   if (!chatId) return json({ error: "chat_id is required" }, 400);
   return json(await getSyncDebugByChatId(chatId));
+}
+
+export async function handleKnownChats(req: NextRequest): Promise<NextResponse> {
+  const blocked = assertApiAccess(req);
+  if (blocked) return blocked;
+  return json({ chats: await getKnownChats() });
 }

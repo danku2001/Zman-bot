@@ -261,6 +261,22 @@ export async function getSyncDebugByChatId(chatId: string): Promise<{
   };
 }
 
+export async function getKnownChats(): Promise<Array<{ chatId: string; total: number; latestActivityAt: string | null }>> {
+  await migrate();
+  const rows = await sql()`
+    SELECT chat_id, COUNT(*)::int AS total, MAX(updated_at) AS latest_activity_at
+    FROM reminders
+    GROUP BY chat_id
+    ORDER BY MAX(updated_at) DESC
+    LIMIT 10
+  ` as Array<{ chat_id: string; total: number; latest_activity_at: string | null }>;
+  return rows.map((row) => ({
+    chatId: row.chat_id,
+    total: row.total,
+    latestActivityAt: toIso(row.latest_activity_at)
+  }));
+}
+
 export async function getRange(chatId: string, startIso: string, endIso: string): Promise<Reminder[]> {
   await migrate();
   const rows = await sql()`SELECT * FROM reminders WHERE chat_id = ${chatId} AND due_at BETWEEN ${startIso} AND ${endIso} ORDER BY due_at ASC` as ReminderRow[];
