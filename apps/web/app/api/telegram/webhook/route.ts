@@ -1,6 +1,7 @@
 import { NextRequest } from "next/server";
 import { json } from "../../../../lib/server/api";
-import { processTelegramUpdate, type TelegramUpdate } from "../../../../lib/server/telegram";
+import { handleTelegramWebhookUpdate } from "../../../../lib/server/webhook";
+import type { TelegramUpdate } from "../../../../lib/server/telegram";
 
 export const runtime = "nodejs";
 
@@ -11,6 +12,5 @@ export async function POST(req: NextRequest) {
   }
   const update = await req.json().catch(() => null) as TelegramUpdate | null;
   if (!update || typeof update.update_id !== "number") return json({ error: "Invalid Telegram update" }, 400);
-  await processTelegramUpdate(update);
-  return json({ ok: true });
+  return json(await handleTelegramWebhookUpdate(update));
 }

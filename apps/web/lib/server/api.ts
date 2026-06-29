@@ -8,6 +8,7 @@ import {
   getRecurringRemindersByChatId,
   getReminderEventsByChatId,
   getRemindersByChatId,
+  getSyncDebugByChatId,
   getStatsByChatId,
   getTodayRemindersByChatId,
   getTomorrowRemindersByChatId,
@@ -161,4 +162,12 @@ export async function handleImport(req: NextRequest): Promise<NextResponse> {
   const reminders = Array.isArray(body.reminders) ? body.reminders : [];
   const result = await importReminders(chatId, reminders);
   return json({ importedCount: result.imported.length, errors: result.errors, reminders: result.imported }, 201);
+}
+
+export async function handleSyncDebug(req: NextRequest): Promise<NextResponse> {
+  const blocked = assertApiAccess(req);
+  if (blocked) return blocked;
+  const chatId = chatIdFrom(req);
+  if (!chatId) return json({ error: "chat_id is required" }, 400);
+  return json(await getSyncDebugByChatId(chatId));
 }

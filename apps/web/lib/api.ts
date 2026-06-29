@@ -53,6 +53,16 @@ export function getEvents(chatId: string): Promise<{ events: ReminderEvent[] }> 
   return request(`/api/events?chat_id=${encodeURIComponent(chatId)}`);
 }
 
+export function getSyncDebug(chatId: string): Promise<{
+  chatId: string;
+  total: number;
+  countsByStatus: Record<Reminder["status"], number>;
+  latest: Array<Pick<Reminder, "id" | "task" | "dueAt" | "status" | "sourceText">>;
+  databaseMode: "postgres" | "sqlite";
+}> {
+  return request(`/api/debug/sync?chat_id=${encodeURIComponent(chatId)}`);
+}
+
 export function parseReminder(chatId: string, message: string): Promise<{ result: unknown }> {
   return request("/api/reminders/parse", {
     method: "POST",

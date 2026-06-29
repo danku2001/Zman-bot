@@ -143,10 +143,28 @@ export async function migrate(): Promise<void> {
       created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
     )
   `;
+  await db`
+    CREATE TABLE IF NOT EXISTS processed_updates (
+      update_id TEXT PRIMARY KEY,
+      chat_id TEXT NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(status, due_at)`;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_chat ON reminders(chat_id, created_at)`;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_normalized ON reminders(chat_id, normalized_task)`;
   migrated = true;
+}
+
+export async function claimProcessedUpdate(updateId: string, chatId?: string | null): Promise<boolean> {
+  await migrate();
+  const rows = await sql()`
+    INSERT INTO processed_updates (update_id, chat_id)
+    VALUES (${updateId}, ${chatId ?? null})
+    ON CONFLICT (update_id) DO NOTHING
+    RETURNING update_id
+  ` as Array<{ update_id: string }>;
+  return rows.length > 0;
 }
 
 async function addEvent(reminderId: number | null, chatId: string, eventType: string, payload?: unknown): Promise<void> {
@@ -189,6 +207,41 @@ export async function getRemindersByChatId(chatId: string): Promise<Reminder[]> 
     ORDER BY CASE status WHEN 'pending' THEN 0 WHEN 'sending' THEN 1 WHEN 'notified' THEN 2 WHEN 'done' THEN 3 ELSE 4 END, due_at ASC
   ` as ReminderRow[];
   return rows.map(mapReminder);
+}
+
+export async function getSyncDebugByChatId(chatId: string): Promise<{
+  chatId: string;
+  total: number;
+  countsByStatus: Record<ReminderStatus, number>;
+  latest: Array<Pick<Reminder, "id" | "task" | "dueAt" | "status" | "sourceText">>;
+  databaseMode: "postgres";
+}> {
+  const reminders = await getRemindersByChatId(chatId);
+  const countsByStatus: Record<ReminderStatus, number> = {
+    pending: 0,
+    sending: 0,
+    notified: 0,
+    done: 0,
+    cancelled: 0
+  };
+  for (const reminder of reminders) countsByStatus[reminder.status] += 1;
+  return {
+    chatId,
+    total: reminders.length,
+    countsByStatus,
+    latest: reminders
+      .slice()
+      .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+      .slice(0, 5)
+      .map((reminder) => ({
+        id: reminder.id,
+        task: reminder.task,
+        dueAt: reminder.dueAt,
+        status: reminder.status,
+        sourceText: reminder.sourceText
+      })),
+    databaseMode: "postgres"
+  };
 }
 
 export async function getRange(chatId: string, startIso: string, endIso: string): Promise<Reminder[]> {

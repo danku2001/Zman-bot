@@ -105,9 +105,12 @@ npm run dev:web
 ```text
 תזכיר לי עוד 10 דקות לשתות מים
 תזכיר לי עוד דקה לשתות מים
+תזכיר לי עוד חמש דקות לבדוק
+תזכיר לי בעוד חמש דקות לבדוק
 תזכיר לי בעוד רבע שעה לצאת
 תזכיר לי בעוד חצי שעה להתקשר
 תזכיר לי עוד שעה להתקשר לאמא
+תזכיר לי עוד שלוש שעות לבדוק
 תזכיר לי עוד שעתיים לחזור ללקוח
 תזכיר לי עוד יום לבדוק משהו
 תזכיר לי עוד יומיים לבדוק משהו
@@ -229,6 +232,7 @@ npm run dev:web
 - `GET /api/health`
 - `POST /api/telegram/webhook`
 - `GET /api/scheduler/run?secret=...`
+- `GET /api/debug/sync?chat_id=...`
 - `GET /api/stats`
 - `GET /api/events`
 - `GET /api/reminders?chat_id=...`
@@ -263,6 +267,10 @@ Authorization: Bearer API_SECRET
 ```
 
 `/api/health` נשאר ציבורי. `/api/telegram/webhook` מוגן על ידי `TELEGRAM_WEBHOOK_SECRET`, ו-`/api/scheduler/run` מוגן על ידי `CRON_SECRET`.
+
+`/api/debug/sync?chat_id=...` מוגן כמו שאר API הדשבורד ומחזיר סיכום בטוח לסנכרון: Chat ID, מספר תזכורות, counts לפי status, חמש תזכורות אחרונות, וסוג DB. הוא לא מחזיר secrets.
+
+ה-webhook שומר `update_id` בטבלת `processed_updates`, כדי ש-retry של Telegram/Vercel לא יעבד את אותה הודעה פעמיים ולא ישלח תגובות כפולות.
 
 ## בדיקות איכות
 

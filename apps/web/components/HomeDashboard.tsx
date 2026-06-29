@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
-import { getEvents, getStats } from "../lib/api";
-import type { ReminderEvent, ReminderStats } from "../lib/types";
+import { getEvents, getReminders, getStats } from "../lib/api";
+import type { Reminder, ReminderEvent, ReminderStats } from "../lib/types";
 import { ChatIdField, getStoredChatId } from "./ChatIdField";
 
 export function HomeDashboard() {
   const [chatId, setChatId] = useState("");
   const [stats, setStats] = useState<ReminderStats | null>(null);
   const [events, setEvents] = useState<ReminderEvent[]>([]);
+  const [latestReminders, setLatestReminders] = useState<Reminder[]>([]);
   const [error, setError] = useState("");
 
   const load = useCallback(async (nextChatId = chatId) => {
@@ -18,8 +19,10 @@ export function HomeDashboard() {
     try {
       const data = await getStats(nextChatId);
       const activity = await getEvents(nextChatId);
+      const reminderData = await getReminders(nextChatId);
       setStats(data.stats);
       setEvents(activity.events);
+      setLatestReminders(reminderData.reminders.slice().sort((a, b) => b.createdAt.localeCompare(a.createdAt)).slice(0, 5));
     } catch (err) {
       setError(err instanceof Error ? err.message : "שגיאה בטעינת הנתונים");
     }
@@ -94,6 +97,20 @@ export function HomeDashboard() {
               <div key={event.id} className="flex flex-col border-b border-ink/10 py-2 text-sm sm:flex-row sm:justify-between">
                 <span className="font-bold">{event.eventType}</span>
                 <span className="text-ink/60">{new Date(event.createdAt).toLocaleString("he-IL")}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {latestReminders.length ? (
+        <div className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft">
+          <h2 className="text-xl font-black">תזכורות אחרונות</h2>
+          <div className="mt-3 grid gap-2">
+            {latestReminders.map((reminder) => (
+              <div key={reminder.id} className="flex flex-col border-b border-ink/10 py-2 text-sm sm:flex-row sm:justify-between">
+                <span className="font-bold">#{reminder.id} · {reminder.task}</span>
+                <span className="text-ink/60">{reminder.status}</span>
               </div>
             ))}
           </div>

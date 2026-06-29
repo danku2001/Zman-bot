@@ -155,8 +155,31 @@ https://YOUR_VERCEL_DOMAIN/api/scheduler/run?secret=CRON_SECRET
 6. בדקו שהתזכורות מופיעות.
 7. בדקו `done`, `snooze`, ו-`cancel`.
 8. בדקו export/import במסך Settings.
+9. במסך reminders לחצו `בדוק סנכרון` וודאו שה-counts תואמים ל-Chat ID.
 
-## 7. פיתוח מקומי
+## 7. Debug Sync
+
+אם תזכורת שנוצרה בטלגרם לא מופיעה בדשבורד:
+
+1. ודאו שהזנתם בדשבורד את ה-ID מהפקודה `/id` בטלגרם.
+2. פתחו את `/reminders`.
+3. לחצו `בדוק סנכרון`.
+4. בדקו:
+   - `chatId` שהתקבל.
+   - `total`.
+   - counts לפי `pending`, `sending`, `notified`, `done`, `cancelled`.
+   - חמש התזכורות האחרונות.
+   - `databaseMode` צריך להיות `postgres` בפרודקשן.
+
+אפשר לבדוק גם ישירות:
+
+```text
+https://YOUR_VERCEL_DOMAIN/api/debug/sync?chat_id=YOUR_CHAT_ID
+```
+
+ה-endpoint מוגן על ידי cookie של הדשבורד או `Authorization: Bearer API_SECRET`, ולא מחזיר secrets.
+
+## 8. פיתוח מקומי
 
 פיתוח מקומי נשאר כמו קודם:
 
@@ -179,7 +202,7 @@ npm run dev
 - Neon Postgres
 - cron-job.org
 
-## 8. מגבלות חינמיות
+## 9. מגבלות חינמיות
 
 - Vercel Hobby חינמי לפרויקטים אישיים, אבל יש לו מגבלות שימוש וזמן ריצה.
 - Neon Free כולל מגבלות storage/compute.

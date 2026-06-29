@@ -15,10 +15,13 @@ function parsed(message: string) {
 test("parses relative reminders", () => {
   assert.equal(parsed("תזכיר לי עוד דקה לבדוק").dueAt, "2026-06-29T10:01:00");
   assert.equal(parsed("תזכיר לי עוד 5 דקות לשתות מים").dueAt, "2026-06-29T10:05:00");
+  assert.equal(parsed("תזכיר לי עוד חמש דקות לבדוק").dueAt, "2026-06-29T10:05:00");
+  assert.equal(parsed("תזכיר לי בעוד חמש דקות לבדוק").dueAt, "2026-06-29T10:05:00");
   assert.equal(parsed("תזכיר לי בעוד רבע שעה לצאת").dueAt, "2026-06-29T10:15:00");
   assert.equal(parsed("תזכיר לי בעוד חצי שעה להתקשר").dueAt, "2026-06-29T10:30:00");
   assert.equal(parsed("תזכיר לי עוד 10 דקות לשתות מים").dueAt, "2026-06-29T10:10:00");
   assert.equal(parsed("תזכיר לי עוד שעה להתקשר לאמא").dueAt, "2026-06-29T11:00:00");
+  assert.equal(parsed("תזכיר לי עוד שלוש שעות לבדוק").dueAt, "2026-06-29T13:00:00");
   assert.equal(parsed("תזכיר לי עוד שעתיים לחזור ללקוח").dueAt, "2026-06-29T12:00:00");
   assert.equal(parsed("תזכיר לי עוד יום לבדוק משהו").dueAt, "2026-06-30T10:00:00");
   assert.equal(parsed("תזכיר לי עוד יומיים לבדוק משהו").dueAt, "2026-07-01T10:00:00");

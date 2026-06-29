@@ -47,6 +47,32 @@ const hebrewHours = new Map<string, number>([
   ["שניים עשר", 12]
 ]);
 
+const hebrewRelativeNumbers = new Map<string, number>([
+  ["אחת", 1],
+  ["אחד", 1],
+  ["שתי", 2],
+  ["שני", 2],
+  ["שתיים", 2],
+  ["שתים", 2],
+  ["שניים", 2],
+  ["שלוש", 3],
+  ["שלושה", 3],
+  ["ארבע", 4],
+  ["ארבעה", 4],
+  ["חמש", 5],
+  ["חמישה", 5],
+  ["שש", 6],
+  ["שישה", 6],
+  ["שבע", 7],
+  ["שבעה", 7],
+  ["שמונה", 8],
+  ["תשע", 9],
+  ["תשעה", 9],
+  ["עשר", 10],
+  ["עשרה", 10]
+]);
+const relativeNumberPattern = Array.from(hebrewRelativeNumbers.keys()).sort((a, b) => b.length - a.length).join("|");
+
 const timePattern =
   "((?:\\d{1,2})(?::\\d{2})?|אחת עשרה|אחד עשר|שתיים עשרה|שתים עשרה|שניים עשר|אחת|אחד|שתיים|שתים|שניים|שני|שלוש|שלושה|ארבע|ארבעה|חמש|חמישה|שש|שישה|שבע|שבעה|שמונה|תשע|תשעה|עשר|עשרה)(?:\\s+(וחצי|ורבע))?(?:\\s+(בבוקר|בצהריים|בצהרים|אחרי הצהריים|אחר הצהריים|בערב|בלילה))?";
 const timePrefix = "(?:ב\\s*-?\\s*|בשעה\\s*|שעה\\s*)?";
@@ -243,7 +269,7 @@ function success(value: ParsedReminder): ParseResult {
 export function parseReminderMessage(message: string, now = new Date()): ParseResult {
   const text = cleanPrefix(message);
 
-  const relativeMatch = text.match(/^(?:עוד|בעוד)\s+(?:(\d+)\s*(דקות?|שעות?|ימים?|שבועות?)|דקה|רבע\s+שעה|חצי\s+שעה|שעה|שעתיים|יום|יומיים|שבוע|שבועיים)\s+(.+)$/u);
+  const relativeMatch = text.match(new RegExp(`^(?:עוד|בעוד)\\s+(?:(\\d+|${relativeNumberPattern})\\s*(דקות?|שעות?|ימים?|שבועות?)|דקה|רבע\\s+שעה|חצי\\s+שעה|שעה|שעתיים|יום|יומיים|שבוע|שבועיים)\\s+(.+)$`, "u"));
   if (relativeMatch) {
     const [, amountText, unitText, rawTask] = relativeMatch;
     let minutes = 0;
@@ -257,7 +283,7 @@ export function parseReminderMessage(message: string, now = new Date()): ParseRe
     else if (/^(?:עוד|בעוד)\s+שבועיים/u.test(text)) minutes = 14 * 24 * 60;
     else if (/^(?:עוד|בעוד)\s+שבוע/u.test(text)) minutes = 7 * 24 * 60;
     else {
-      const amount = Number(amountText);
+      const amount = /^\d+$/u.test(amountText) ? Number(amountText) : hebrewRelativeNumbers.get(amountText) ?? 0;
       const unit = unitText ?? "דקות";
       if (unit.startsWith("שע")) minutes = amount * 60;
       else if (unit.startsWith("יו")) minutes = amount * 24 * 60;

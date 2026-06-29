@@ -1,9 +1,9 @@
 import { NextRequest } from "next/server";
-import { handleStats } from "../../../lib/server/api";
+import { handleSyncDebug } from "../../../../lib/server/api";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 export function GET(req: NextRequest) {
-  return handleStats(req);
+  return handleSyncDebug(req);
 }

@@ -6,6 +6,7 @@ import {
   getRecurringReminders,
   getOverdueReminders,
   getReminders,
+  getSyncDebug,
   getTodayReminders,
   getTomorrowReminders,
   getWeekReminders,
@@ -33,6 +34,7 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
   const [priority, setPriority] = useState("");
   const [status, setStatus] = useState("");
   const [sort, setSort] = useState<"asc" | "desc">("asc");
+  const [syncDebug, setSyncDebug] = useState<Awaited<ReturnType<typeof getSyncDebug>> | null>(null);
 
   const load = useCallback(async (nextChatId = chatId) => {
     if (!nextChatId) return;
@@ -96,6 +98,16 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
     await load();
   }
 
+  async function handleSyncDebug() {
+    if (!chatId) return;
+    setError("");
+    try {
+      setSyncDebug(await getSyncDebug(chatId));
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "בדיקת סנכרון נכשלה");
+    }
+  }
+
   return (
     <section className="space-y-5">
       <div className="grid gap-3 rounded-lg border border-ink/10 bg-white p-4 shadow-soft sm:grid-cols-[1fr_auto] sm:items-end">
@@ -151,14 +163,42 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
         >
           רענון
         </button>
+        <button
+          onClick={() => void handleSyncDebug()}
+          disabled={!chatId}
+          className="rounded-md border border-mint/30 px-4 py-2 font-bold text-ink transition hover:bg-mint hover:text-white disabled:cursor-not-allowed disabled:border-ink/10 disabled:text-ink/30"
+        >
+          בדוק סנכרון
+        </button>
       </div>
+
+      {chatId ? <p className="text-sm font-bold text-ink/65">מציג תזכורות עבור Chat ID: {chatId}</p> : null}
+
+      {syncDebug ? (
+        <div className="rounded-lg border border-mint/20 bg-white p-4 shadow-soft">
+          <h2 className="font-black text-ink">בדיקת סנכרון</h2>
+          <p className="mt-1 text-sm text-ink/65">Database: {syncDebug.databaseMode} · סך הכל: {syncDebug.total}</p>
+          <div className="mt-3 flex flex-wrap gap-2 text-sm">
+            {Object.entries(syncDebug.countsByStatus).map(([key, value]) => (
+              <span key={key} className="rounded-md bg-ink/10 px-2 py-1 font-bold">{key}: {value}</span>
+            ))}
+          </div>
+          {syncDebug.latest.length ? (
+            <div className="mt-3 grid gap-1 text-sm text-ink/75">
+              {syncDebug.latest.map((item) => (
+                <div key={item.id}>#{item.id} · {item.status} · {item.task}</div>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      ) : null}
 
       {loading ? <div className="rounded-lg bg-white p-6 text-center shadow-soft">טוען תזכורות...</div> : null}
       {error ? <div className="rounded-lg border border-coral/30 bg-coral/10 p-4 font-bold text-coral">{error}</div> : null}
       {!loading && !error && reminders.length === 0 ? (
         <div className="rounded-lg border border-dashed border-ink/20 bg-white p-8 text-center shadow-soft">
           <h2 className="text-xl font-black">אין תזכורות להצגה</h2>
-          <p className="mt-2 text-ink/65">צרו תזכורת חדשה או בדקו שה-Chat ID נכון.</p>
+          <p className="mt-2 text-ink/65">לא נמצאו תזכורות עבור ה-Chat ID הזה. ודא שהעתקת את ה-ID מהפקודה /id בטלגרם.</p>
         </div>
       ) : null}
       <div className="grid gap-3">
