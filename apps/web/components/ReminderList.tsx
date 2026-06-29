@@ -114,9 +114,42 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
     }
   }
 
+  function clearFilters() {
+    setQuery("");
+    setCategory("");
+    setPriority("");
+    setStatus("");
+    setSort("asc");
+  }
+
   return (
     <section className="space-y-5">
-      <div className="grid gap-3 rounded-lg border border-ink/10 bg-white p-4 shadow-soft sm:grid-cols-[1fr_auto] sm:items-end">
+      <div className="rounded-lg border border-ink/10 bg-white p-5 shadow-soft">
+        <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="text-sm font-black text-mint">ניהול תזכורות</p>
+            <h1 className="mt-1 text-3xl font-black text-ink">רשימת תזכורות</h1>
+            <p className="mt-1 text-sm font-semibold text-ink/55">
+              {loading ? "טוען..." : `מוצגות ${reminders.length} תזכורות`}
+              {chatId ? ` עבור Chat ID ${chatId}` : ""}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              onClick={() => void load()}
+              className="rounded-md bg-ink px-4 py-2 font-bold text-white transition hover:bg-ink/85"
+            >
+              רענון
+            </button>
+            <button
+              onClick={clearFilters}
+              className="rounded-md border border-ink/15 px-4 py-2 font-bold text-ink transition hover:border-mint hover:text-mint"
+            >
+              ניקוי פילטרים
+            </button>
+          </div>
+        </div>
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
         <ChatIdField chatId={chatId} onChange={setChatId} />
         <label className="block">
           <span className="mb-2 block text-sm font-bold text-ink">חיפוש</span>
@@ -164,18 +197,13 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
           </select>
         </label>
         <button
-          onClick={() => void load()}
-          className="rounded-md bg-ink px-4 py-2 font-bold text-white transition hover:bg-ink/85"
-        >
-          רענון
-        </button>
-        <button
           onClick={() => void handleSyncDebug()}
           disabled={!chatId}
-          className="rounded-md border border-mint/30 px-4 py-2 font-bold text-ink transition hover:bg-mint hover:text-white disabled:cursor-not-allowed disabled:border-ink/10 disabled:text-ink/30"
+          className="self-end rounded-md border border-mint/30 px-4 py-2 font-bold text-ink transition hover:bg-mint hover:text-white disabled:cursor-not-allowed disabled:border-ink/10 disabled:text-ink/30"
         >
           בדוק סנכרון
         </button>
+        </div>
       </div>
 
       {chatId ? <p className="text-sm font-bold text-ink/65">מציג תזכורות עבור Chat ID: {chatId}</p> : null}

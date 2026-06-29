@@ -3,7 +3,7 @@ import { SyncDiagnostics } from "../../components/SyncDiagnostics";
 
 export default function SettingsPage() {
   return (
-    <div className="mx-auto max-w-2xl">
+    <div className="mx-auto max-w-5xl">
       <section className="rounded-lg border border-ink/10 bg-white p-6 shadow-soft">
         <h1 className="text-3xl font-black text-ink">הגדרות</h1>
         <div className="mt-5 grid gap-4 text-ink/75">

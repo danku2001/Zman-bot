@@ -9,12 +9,27 @@
 body {
   min-height: 100vh;
   background:
-    linear-gradient(180deg, rgba(47, 191, 113, 0.08), rgba(255, 255, 255, 0) 320px),
-    #f7f8f4;
+    linear-gradient(180deg, rgba(47, 191, 113, 0.1), rgba(255, 255, 255, 0) 360px),
+    linear-gradient(90deg, rgba(242, 184, 75, 0.08), rgba(231, 90, 79, 0.04)),
+    #f6f8f4;
   color: #17211c;
 }
 
 button,
-input {
+input,
+select,
+textarea {
   font: inherit;
+}
+
+button,
+a,
+input,
+select,
+textarea {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: rgba(47, 191, 113, 0.22);
 }
