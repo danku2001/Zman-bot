@@ -1,10 +1,14 @@
 import cron from "node-cron";
 import type { Telegraf } from "telegraf";
 import {
+  claimDueFollowupReminder,
   claimReminderForSending,
+  clearMaxedFollowups,
   getPendingDueReminders,
+  markFollowupSent,
   markReminderNotifiedAfterSend,
   recoverStaleSendingReminders,
+  releaseFollowupAfterSendFailure,
   releaseReminderAfterSendFailure,
   rescheduleRecurringReminder
 } from "./db";
@@ -31,7 +35,7 @@ export function startScheduler(bot: Telegraf): void {
         const isRecurring = Boolean(reminder.recurrenceType);
         await bot.telegram.sendMessage(
           reminder.chatId,
-          isRecurring ? `⏰ תזכורת קבועה: ${reminder.task}` : `⏰ תזכורת: ${reminder.task}`,
+          isRecurring ? `⏰ תזכורת קבועה: ${reminder.task}` : `⏰ תזכורת: ${reminder.task}\n\nהאם ביצעת?`,
           sentReminderKeyboard(reminder.id)
         );
         if (reminder.recurrenceType) {
@@ -45,6 +49,21 @@ export function startScheduler(bot: Telegraf): void {
       } catch (error) {
         releaseReminderAfterSendFailure(reminder.id);
         logger.error("Failed to send reminder", { id: reminder.id, error });
+      }
+    }
+
+    clearMaxedFollowups();
+
+    for (let i = 0; i < 25; i += 1) {
+      const reminder = claimDueFollowupReminder(nowLocalIso());
+      if (!reminder) break;
+      try {
+        await bot.telegram.sendMessage(reminder.chatId, `⏰ תזכורת חוזרת:\n${reminder.task}\n\nהאם ביצעת?`, sentReminderKeyboard(reminder.id));
+        markFollowupSent(reminder);
+        logger.info("Reminder follow-up sent", { id: reminder.id, chatId: reminder.chatId });
+      } catch (error) {
+        releaseFollowupAfterSendFailure(reminder);
+        logger.error("Failed to send reminder follow-up", { id: reminder.id, error });
       }
     }
   });

@@ -28,6 +28,9 @@ type ReminderRow = {
   completed_at: string | null;
   last_snoozed_at: string | null;
   snooze_count: number | null;
+  next_followup_at: string | null;
+  followup_count: number | null;
+  last_followup_at: string | null;
   source_text: string | null;
 };
 
@@ -81,9 +84,15 @@ function mapReminder(row: ReminderRow): Reminder {
     completedAt: toIso(row.completed_at),
     lastSnoozedAt: toIso(row.last_snoozed_at),
     snoozeCount: row.snooze_count ?? 0,
+    nextFollowupAt: toIso(row.next_followup_at),
+    followupCount: row.followup_count ?? 0,
+    lastFollowupAt: toIso(row.last_followup_at),
     sourceText: row.source_text
   };
 }
+
+const FOLLOWUP_INTERVAL_MS = 5 * 60_000;
+export const MAX_FOLLOWUPS = Number(process.env.MAX_FOLLOWUPS ?? 12);
 
 function mapEvent(row: {
   id: number;
@@ -130,9 +139,15 @@ export async function migrate(): Promise<void> {
       completed_at TIMESTAMPTZ NULL,
       last_snoozed_at TIMESTAMPTZ NULL,
       snooze_count INTEGER DEFAULT 0,
+      next_followup_at TIMESTAMPTZ NULL,
+      followup_count INTEGER DEFAULT 0,
+      last_followup_at TIMESTAMPTZ NULL,
       source_text TEXT NULL
     )
   `;
+  await db`ALTER TABLE reminders ADD COLUMN IF NOT EXISTS next_followup_at TIMESTAMPTZ NULL`;
+  await db`ALTER TABLE reminders ADD COLUMN IF NOT EXISTS followup_count INTEGER DEFAULT 0`;
+  await db`ALTER TABLE reminders ADD COLUMN IF NOT EXISTS last_followup_at TIMESTAMPTZ NULL`;
   await db`
     CREATE TABLE IF NOT EXISTS reminder_events (
       id BIGSERIAL PRIMARY KEY,
@@ -151,6 +166,7 @@ export async function migrate(): Promise<void> {
     )
   `;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(status, due_at)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_reminders_followup ON reminders(status, next_followup_at)`;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_chat ON reminders(chat_id, created_at)`;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_normalized ON reminders(chat_id, normalized_task)`;
   migrated = true;
@@ -254,6 +270,10 @@ function localIso(date = new Date()): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
 }
 
+function nextFollowupIso(date = new Date()): string {
+  return localIso(new Date(date.getTime() + FOLLOWUP_INTERVAL_MS));
+}
+
 function rangeForDay(now: Date, offset: number): { startIso: string; endIso: string } {
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 0, 0, 0, 0);
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 23, 59, 59, 999);
@@ -302,15 +322,31 @@ export async function searchRemindersByChatId(chatId: string, query: string): Pr
 
 export async function markReminderDone(chatId: string, id: number): Promise<boolean> {
   await migrate();
-  const rows = await sql()`UPDATE reminders SET status = 'done', sending_at = NULL, completed_at = NOW(), updated_at = NOW() WHERE id = ${id} AND chat_id = ${chatId} RETURNING id` as Array<{ id: number }>;
-  if (rows.length) await addEvent(id, chatId, "completed");
+  const rows = await sql()`
+    UPDATE reminders
+    SET status = 'done', sending_at = NULL, next_followup_at = NULL, completed_at = NOW(), updated_at = NOW()
+    WHERE id = ${id} AND chat_id = ${chatId}
+    RETURNING id, status
+  ` as Array<{ id: number; status: ReminderStatus }>;
+  if (rows.length) {
+    await addEvent(id, chatId, "completed");
+    await addEvent(id, chatId, "followup_stopped_done");
+  }
   return rows.length > 0;
 }
 
 export async function cancelReminder(chatId: string, id: number): Promise<boolean> {
   await migrate();
-  const rows = await sql()`UPDATE reminders SET status = 'cancelled', sending_at = NULL, cancelled_at = NOW(), updated_at = NOW() WHERE id = ${id} AND chat_id = ${chatId} RETURNING id` as Array<{ id: number }>;
-  if (rows.length) await addEvent(id, chatId, "cancelled");
+  const rows = await sql()`
+    UPDATE reminders
+    SET status = 'cancelled', sending_at = NULL, next_followup_at = NULL, cancelled_at = NOW(), updated_at = NOW()
+    WHERE id = ${id} AND chat_id = ${chatId}
+    RETURNING id
+  ` as Array<{ id: number }>;
+  if (rows.length) {
+    await addEvent(id, chatId, "cancelled");
+    await addEvent(id, chatId, "followup_stopped_cancelled");
+  }
   return rows.length > 0;
 }
 
@@ -320,7 +356,8 @@ export async function snoozeReminder(chatId: string, id: number, snoozeUntil: st
   await migrate();
   const rows = await sql()`
     UPDATE reminders
-    SET due_at = ${snoozeUntil}, status = 'pending', sending_at = NULL, last_snoozed_at = NOW(), snooze_count = COALESCE(snooze_count, 0) + 1, updated_at = NOW()
+    SET due_at = ${snoozeUntil}, status = 'pending', sending_at = NULL, next_followup_at = NULL,
+        last_snoozed_at = NOW(), snooze_count = COALESCE(snooze_count, 0) + 1, updated_at = NOW()
     WHERE id = ${id} AND chat_id = ${chatId} AND status IN ('pending', 'sending', 'notified')
     RETURNING *
   ` as ReminderRow[];
@@ -443,9 +480,86 @@ export async function releaseReminderAfterSendFailure(id: number): Promise<void>
 
 export async function markReminderNotifiedAfterSend(reminder: Reminder): Promise<boolean> {
   await migrate();
-  const rows = await sql()`UPDATE reminders SET status = 'notified', sent_at = NOW(), sending_at = NULL, updated_at = NOW() WHERE id = ${reminder.id} AND status = 'sending' RETURNING id` as Array<{ id: number }>;
+  const nextFollowupAt = nextFollowupIso();
+  const rows = await sql()`
+    UPDATE reminders
+    SET status = 'notified', sent_at = NOW(), sending_at = NULL, next_followup_at = ${nextFollowupAt},
+        followup_count = 0, last_followup_at = NULL, updated_at = NOW()
+    WHERE id = ${reminder.id} AND status = 'sending'
+    RETURNING id
+  ` as Array<{ id: number }>;
   if (rows.length) await addEvent(reminder.id, reminder.chatId, "sent", { dueAt: reminder.dueAt });
   return rows.length > 0;
+}
+
+export async function deferReminderFollowup(chatId: string, id: number): Promise<boolean> {
+  await migrate();
+  const nextFollowupAt = nextFollowupIso();
+  const rows = await sql()`
+    UPDATE reminders
+    SET next_followup_at = ${nextFollowupAt}, updated_at = NOW()
+    WHERE id = ${id} AND chat_id = ${chatId} AND status = 'notified'
+    RETURNING id
+  ` as Array<{ id: number }>;
+  if (rows.length) await addEvent(id, chatId, "followup_skipped", { nextFollowupAt });
+  return rows.length > 0;
+}
+
+export async function claimDueFollowupReminder(nowIso: string, maxFollowups = MAX_FOLLOWUPS): Promise<Reminder | null> {
+  await migrate();
+  const rows = await sql()`
+    UPDATE reminders
+    SET sending_at = NOW(), updated_at = NOW()
+    WHERE id = (
+      SELECT id FROM reminders
+      WHERE status = 'notified'
+        AND next_followup_at IS NOT NULL
+        AND next_followup_at <= ${nowIso}
+        AND sending_at IS NULL
+        AND COALESCE(followup_count, 0) < ${maxFollowups}
+      ORDER BY next_followup_at ASC
+      LIMIT 1
+      FOR UPDATE SKIP LOCKED
+    )
+    RETURNING *
+  ` as ReminderRow[];
+  return rows[0] ? mapReminder(rows[0]) : null;
+}
+
+export async function releaseFollowupAfterSendFailure(reminder: Reminder): Promise<void> {
+  await migrate();
+  await sql()`
+    UPDATE reminders
+    SET sending_at = NULL, updated_at = NOW()
+    WHERE id = ${reminder.id} AND status = 'notified'
+  `;
+}
+
+export async function markFollowupSent(reminder: Reminder, maxFollowups = MAX_FOLLOWUPS): Promise<boolean> {
+  await migrate();
+  const nextCount = reminder.followupCount + 1;
+  const nextFollowupAt = nextCount >= maxFollowups ? null : nextFollowupIso();
+  const rows = await sql()`
+    UPDATE reminders
+    SET followup_count = ${nextCount}, last_followup_at = NOW(), next_followup_at = ${nextFollowupAt}, sending_at = NULL, updated_at = NOW()
+    WHERE id = ${reminder.id} AND status = 'notified'
+    RETURNING id
+  ` as Array<{ id: number }>;
+  if (rows.length) await addEvent(reminder.id, reminder.chatId, "followup_sent", { followupCount: nextCount, nextFollowupAt });
+  if (rows.length && !nextFollowupAt) await addEvent(reminder.id, reminder.chatId, "followup_skipped", { reason: "max_followups", maxFollowups });
+  return rows.length > 0;
+}
+
+export async function clearMaxedFollowups(maxFollowups = MAX_FOLLOWUPS): Promise<number> {
+  await migrate();
+  const rows = await sql()`
+    UPDATE reminders
+    SET next_followup_at = NULL, updated_at = NOW()
+    WHERE status = 'notified' AND next_followup_at IS NOT NULL AND COALESCE(followup_count, 0) >= ${maxFollowups}
+    RETURNING id, chat_id
+  ` as Array<{ id: number; chat_id: string }>;
+  for (const reminder of rows) await addEvent(reminder.id, reminder.chat_id, "followup_skipped", { reason: "max_followups", maxFollowups });
+  return rows.length;
 }
 
 export async function rescheduleRecurringReminder(reminder: Reminder): Promise<Reminder> {
@@ -459,7 +573,13 @@ export async function rescheduleRecurringReminder(reminder: Reminder): Promise<R
     time: reminder.recurrenceTime
   });
   await migrate();
-  const rows = await sql()`UPDATE reminders SET due_at = ${nextDueAt}, status = 'pending', sent_at = NOW(), sending_at = NULL, updated_at = NOW() WHERE id = ${reminder.id} RETURNING *` as ReminderRow[];
+  const rows = await sql()`
+    UPDATE reminders
+    SET due_at = ${nextDueAt}, status = 'pending', sent_at = NOW(), sending_at = NULL,
+        next_followup_at = NULL, updated_at = NOW()
+    WHERE id = ${reminder.id}
+    RETURNING *
+  ` as ReminderRow[];
   await addEvent(reminder.id, reminder.chatId, "sent", { dueAt: reminder.dueAt });
   await addEvent(reminder.id, reminder.chatId, "rescheduled", { nextDueAt });
   return mapReminder(rows[0]);
@@ -468,7 +588,9 @@ export async function rescheduleRecurringReminder(reminder: Reminder): Promise<R
 export async function recoverStaleSendingReminders(cutoffIso?: string): Promise<number> {
   await migrate();
   const cutoff = cutoffIso ?? new Date(Date.now() - 5 * 60_000).toISOString();
-  const rows = await sql()`UPDATE reminders SET status = 'pending', sending_at = NULL, updated_at = NOW() WHERE status = 'sending' AND sending_at < ${cutoff} RETURNING id, chat_id` as Array<{ id: number; chat_id: string }>;
+  const dueRows = await sql()`UPDATE reminders SET status = 'pending', sending_at = NULL, updated_at = NOW() WHERE status = 'sending' AND sending_at < ${cutoff} RETURNING id, chat_id` as Array<{ id: number; chat_id: string }>;
+  const followupRows = await sql()`UPDATE reminders SET sending_at = NULL, updated_at = NOW() WHERE status = 'notified' AND sending_at < ${cutoff} RETURNING id, chat_id` as Array<{ id: number; chat_id: string }>;
+  const rows = [...dueRows, ...followupRows];
   for (const reminder of rows) await addEvent(reminder.id, reminder.chat_id, "send_recovered", { cutoffIso: cutoff });
   return rows.length;
 }

@@ -6,6 +6,7 @@ import {
   cancelTodayRemindersByChatId,
   clearDoneRemindersByChatId,
   createReminder,
+  deferReminderFollowup,
   findMatchingReminders,
   getCompletedTodayRemindersByChatId,
   getOverdueRemindersByChatId,
@@ -63,7 +64,7 @@ function recurrenceLabel(reminder: Reminder): string {
 function statusLabel(reminder: Reminder): string {
   if (reminder.status === "pending") return "פתוחה";
   if (reminder.status === "sending") return "בשליחה";
-  if (reminder.status === "notified") return "נשלחה";
+  if (reminder.status === "notified") return "ממתין לאישור ביצוע";
   if (reminder.status === "done") return "בוצעה";
   return "בוטלה";
 }
@@ -135,9 +136,8 @@ function afterCreateKeyboard(id: number) {
 
 function sentReminderKeyboard(id: number) {
   return Markup.inlineKeyboard([
-    [Markup.button.callback("✅ בוצע", `done:${id}`), Markup.button.callback("🕒 עוד 10 דקות", `snooze:${id}:10m`)],
-    [Markup.button.callback("🕒 עוד שעה", `snooze:${id}:1h`), Markup.button.callback("📅 מחר ב-9", `snooze:${id}:tomorrow_9`)],
-    [Markup.button.callback("🗑️ בטל", `cancel:${id}`)]
+    [Markup.button.callback("✅ ביצעתי", `done:${id}`), Markup.button.callback("🕒 דחה", `snooze_menu:${id}`)],
+    [Markup.button.callback("❌ לא עכשיו", `not_now:${id}`), Markup.button.callback("🗑️ בטל", `cancel:${id}`)]
   ]);
 }
 
@@ -350,7 +350,13 @@ bot.action(/^view:(list|today|week|recurring|overdue)$/, async (ctx) => {
 bot.action(/^done:(\d+)$/, async (ctx) => {
   const ok = markReminderDone(String(ctx.chat?.id), Number(ctx.match[1]));
   await ctx.answerCbQuery(ok ? "סומן כבוצע" : "לא נמצא");
-  await ctx.reply(ok ? "סימנתי כבוצע ✅" : "לא מצאתי תזכורת מתאימה.");
+  await ctx.reply(ok ? "מעולה ✅ סימנתי כבוצע" : "לא מצאתי תזכורת מתאימה.");
+});
+
+bot.action(/^not_now:(\d+)$/, async (ctx) => {
+  const ok = deferReminderFollowup(String(ctx.chat?.id), Number(ctx.match[1]));
+  await ctx.answerCbQuery(ok ? "אזכיר שוב" : "לא נמצא");
+  await ctx.reply(ok ? "סבבה, אזכיר לך שוב בעוד 5 דקות." : "לא מצאתי תזכורת מתאימה.");
 });
 
 bot.action(/^cancel:(\d+)$/, async (ctx) => {

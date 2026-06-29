@@ -48,6 +48,9 @@ const requiredColumns: Record<string, string> = {
   sending_at: "TEXT NULL",
   last_snoozed_at: "TEXT NULL",
   snooze_count: "INTEGER DEFAULT 0",
+  next_followup_at: "TEXT NULL",
+  followup_count: "INTEGER DEFAULT 0",
+  last_followup_at: "TEXT NULL",
   source_text: "TEXT NULL"
 };
 
@@ -77,6 +80,9 @@ db.prepare("UPDATE reminders SET sending_at = COALESCE(sending_at, updated_at, c
 db.exec(`
 CREATE INDEX IF NOT EXISTS idx_reminders_due
 ON reminders(status, due_at);
+
+CREATE INDEX IF NOT EXISTS idx_reminders_followup
+ON reminders(status, next_followup_at);
 
 CREATE INDEX IF NOT EXISTS idx_reminders_chat
 ON reminders(chat_id, created_at);
@@ -108,6 +114,9 @@ type ReminderRow = {
   completed_at: string | null;
   last_snoozed_at: string | null;
   snooze_count: number | null;
+  next_followup_at: string | null;
+  followup_count: number | null;
+  last_followup_at: string | null;
   source_text: string | null;
 };
 
@@ -145,12 +154,22 @@ function mapRow(row: ReminderRow): Reminder {
     completedAt: row.completed_at,
     lastSnoozedAt: row.last_snoozed_at,
     snoozeCount: row.snooze_count ?? 0,
+    nextFollowupAt: row.next_followup_at,
+    followupCount: row.followup_count ?? 0,
+    lastFollowupAt: row.last_followup_at,
     sourceText: row.source_text
   };
 }
 
+const FOLLOWUP_INTERVAL_MS = 5 * 60_000;
+export const MAX_FOLLOWUPS = Number(process.env.MAX_FOLLOWUPS ?? 12);
+
 function localIso(date = new Date()): string {
   return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+}
+
+function nextFollowupIso(date = new Date()): string {
+  return localIso(new Date(date.getTime() + FOLLOWUP_INTERVAL_MS));
 }
 
 function addEvent(reminderId: number | null, chatId: string, eventType: string, payload?: unknown): void {
@@ -245,15 +264,21 @@ export function recoverStaleSendingReminders(cutoffIso?: string): number {
   const cutoff =
     cutoffIso ??
     new Date(Date.now() - 5 * 60_000).toISOString();
-  const stale = db
+  const staleDue = db
     .prepare("SELECT id, chat_id FROM reminders WHERE status = 'sending' AND sending_at IS NOT NULL AND sending_at < ?")
     .all(cutoff) as Array<{ id: number; chat_id: string }>;
+  const staleFollowups = db
+    .prepare("SELECT id, chat_id FROM reminders WHERE status = 'notified' AND sending_at IS NOT NULL AND sending_at < ?")
+    .all(cutoff) as Array<{ id: number; chat_id: string }>;
+  const stale = [...staleDue, ...staleFollowups];
   if (stale.length === 0) return 0;
   const timestamp = new Date().toISOString();
   const recover = db.prepare("UPDATE reminders SET status = 'pending', sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'");
+  const recoverFollowup = db.prepare("UPDATE reminders SET sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'notified'");
   for (const reminder of stale) {
     const result = recover.run(timestamp, reminder.id);
-    if (result.changes > 0) addEvent(reminder.id, reminder.chat_id, "send_recovered", { cutoffIso: cutoff });
+    const followupResult = result.changes > 0 ? result : recoverFollowup.run(timestamp, reminder.id);
+    if (followupResult.changes > 0) addEvent(reminder.id, reminder.chat_id, "send_recovered", { cutoffIso: cutoff });
   }
   return stale.length;
 }
@@ -352,9 +377,12 @@ export function findMatchingReminders(chatId: string, target: string): Reminder[
 export function markReminderDone(chatId: string, id: number): boolean {
   const timestamp = new Date().toISOString();
   const result = db
-    .prepare("UPDATE reminders SET status = 'done', sending_at = NULL, completed_at = ?, updated_at = ? WHERE id = ? AND chat_id = ?")
+    .prepare("UPDATE reminders SET status = 'done', sending_at = NULL, next_followup_at = NULL, completed_at = ?, updated_at = ? WHERE id = ? AND chat_id = ?")
     .run(timestamp, timestamp, id, chatId);
-  if (result.changes > 0) addEvent(id, chatId, "completed");
+  if (result.changes > 0) {
+    addEvent(id, chatId, "completed");
+    addEvent(id, chatId, "followup_stopped_done");
+  }
   return result.changes > 0;
 }
 
@@ -363,18 +391,24 @@ export function markReminderDoneById(id: number): boolean {
   if (!reminder) return false;
   const timestamp = new Date().toISOString();
   const result = db
-    .prepare("UPDATE reminders SET status = 'done', sent_at = COALESCE(sent_at, ?), sending_at = NULL, completed_at = ?, updated_at = ? WHERE id = ?")
+    .prepare("UPDATE reminders SET status = 'done', sent_at = COALESCE(sent_at, ?), sending_at = NULL, next_followup_at = NULL, completed_at = ?, updated_at = ? WHERE id = ?")
     .run(timestamp, timestamp, timestamp, id);
-  if (result.changes > 0) addEvent(id, reminder.chatId, "completed");
+  if (result.changes > 0) {
+    addEvent(id, reminder.chatId, "completed");
+    addEvent(id, reminder.chatId, "followup_stopped_done");
+  }
   return result.changes > 0;
 }
 
 export function cancelReminder(chatId: string, id: number): boolean {
   const timestamp = new Date().toISOString();
   const result = db
-    .prepare("UPDATE reminders SET status = 'cancelled', sending_at = NULL, cancelled_at = ?, updated_at = ? WHERE id = ? AND chat_id = ?")
+    .prepare("UPDATE reminders SET status = 'cancelled', sending_at = NULL, next_followup_at = NULL, cancelled_at = ?, updated_at = ? WHERE id = ? AND chat_id = ?")
     .run(timestamp, timestamp, id, chatId);
-  if (result.changes > 0) addEvent(id, chatId, "cancelled");
+  if (result.changes > 0) {
+    addEvent(id, chatId, "cancelled");
+    addEvent(id, chatId, "followup_stopped_cancelled");
+  }
   return result.changes > 0;
 }
 
@@ -385,7 +419,8 @@ export function snoozeReminder(chatId: string, id: number, snoozeUntil: string):
   const result = db
     .prepare(
       `UPDATE reminders
-       SET due_at = ?, status = 'pending', sending_at = NULL, last_snoozed_at = ?, snooze_count = COALESCE(snooze_count, 0) + 1, updated_at = ?
+       SET due_at = ?, status = 'pending', sending_at = NULL, next_followup_at = NULL,
+           last_snoozed_at = ?, snooze_count = COALESCE(snooze_count, 0) + 1, updated_at = ?
        WHERE id = ? AND chat_id = ? AND status IN ('pending', 'sending', 'notified')`
     )
     .run(snoozeUntil, timestamp, timestamp, id, chatId);
@@ -457,7 +492,7 @@ export function rescheduleRecurringReminder(reminder: Reminder): Reminder {
   );
 
   const timestamp = new Date().toISOString();
-  db.prepare("UPDATE reminders SET due_at = ?, status = 'pending', sent_at = ?, sending_at = NULL, updated_at = ? WHERE id = ?").run(
+  db.prepare("UPDATE reminders SET due_at = ?, status = 'pending', sent_at = ?, sending_at = NULL, next_followup_at = NULL, updated_at = ? WHERE id = ?").run(
     nextDueAt,
     timestamp,
     timestamp,
@@ -471,11 +506,84 @@ export function rescheduleRecurringReminder(reminder: Reminder): Reminder {
 
 export function markReminderNotifiedAfterSend(reminder: Reminder): boolean {
   const timestamp = new Date().toISOString();
+  const nextFollowupAt = nextFollowupIso();
   const result = db
-    .prepare("UPDATE reminders SET status = 'notified', sent_at = ?, sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'sending'")
-    .run(timestamp, timestamp, reminder.id);
+    .prepare(
+      `UPDATE reminders
+       SET status = 'notified', sent_at = ?, sending_at = NULL, next_followup_at = ?,
+           followup_count = 0, last_followup_at = NULL, updated_at = ?
+       WHERE id = ? AND status = 'sending'`
+    )
+    .run(timestamp, nextFollowupAt, timestamp, reminder.id);
   if (result.changes > 0) addEvent(reminder.id, reminder.chatId, "sent", { dueAt: reminder.dueAt });
   return result.changes > 0;
+}
+
+export function deferReminderFollowup(chatId: string, id: number): boolean {
+  const timestamp = new Date().toISOString();
+  const nextFollowupAt = nextFollowupIso();
+  const result = db
+    .prepare("UPDATE reminders SET next_followup_at = ?, updated_at = ? WHERE id = ? AND chat_id = ? AND status = 'notified'")
+    .run(nextFollowupAt, timestamp, id, chatId);
+  if (result.changes > 0) addEvent(id, chatId, "followup_skipped", { nextFollowupAt });
+  return result.changes > 0;
+}
+
+export function claimDueFollowupReminder(nowIso: string, maxFollowups = MAX_FOLLOWUPS): Reminder | null {
+  const row = db
+    .prepare(
+      `SELECT * FROM reminders
+       WHERE status = 'notified'
+         AND next_followup_at IS NOT NULL
+         AND next_followup_at <= ?
+         AND sending_at IS NULL
+         AND COALESCE(followup_count, 0) < ?
+       ORDER BY next_followup_at ASC
+       LIMIT 1`
+    )
+    .get(nowIso, maxFollowups) as ReminderRow | undefined;
+  if (!row) return null;
+  const timestamp = new Date().toISOString();
+  const result = db
+    .prepare("UPDATE reminders SET sending_at = ?, updated_at = ? WHERE id = ? AND status = 'notified' AND next_followup_at IS NOT NULL AND sending_at IS NULL")
+    .run(timestamp, timestamp, row.id);
+  return result.changes > 0 ? mapRow({ ...row, sending_at: timestamp }) : null;
+}
+
+export function releaseFollowupAfterSendFailure(reminder: Reminder): void {
+  db.prepare("UPDATE reminders SET sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'notified'").run(
+    new Date().toISOString(),
+    reminder.id
+  );
+}
+
+export function markFollowupSent(reminder: Reminder, maxFollowups = MAX_FOLLOWUPS): boolean {
+  const timestamp = new Date().toISOString();
+  const nextCount = reminder.followupCount + 1;
+  const nextFollowupAt = nextCount >= maxFollowups ? null : nextFollowupIso();
+  const result = db
+    .prepare("UPDATE reminders SET followup_count = ?, last_followup_at = ?, next_followup_at = ?, sending_at = NULL, updated_at = ? WHERE id = ? AND status = 'notified'")
+    .run(nextCount, timestamp, nextFollowupAt, timestamp, reminder.id);
+  if (result.changes > 0) addEvent(reminder.id, reminder.chatId, "followup_sent", { followupCount: nextCount, nextFollowupAt });
+  if (result.changes > 0 && !nextFollowupAt) addEvent(reminder.id, reminder.chatId, "followup_skipped", { reason: "max_followups", maxFollowups });
+  return result.changes > 0;
+}
+
+export function clearMaxedFollowups(maxFollowups = MAX_FOLLOWUPS): number {
+  const rows = db
+    .prepare(
+      `SELECT id, chat_id FROM reminders
+       WHERE status = 'notified' AND next_followup_at IS NOT NULL AND COALESCE(followup_count, 0) >= ?`
+    )
+    .all(maxFollowups) as Array<{ id: number; chat_id: string }>;
+  if (!rows.length) return 0;
+  const timestamp = new Date().toISOString();
+  const update = db.prepare("UPDATE reminders SET next_followup_at = NULL, updated_at = ? WHERE id = ? AND status = 'notified'");
+  for (const reminder of rows) {
+    const result = update.run(timestamp, reminder.id);
+    if (result.changes > 0) addEvent(reminder.id, reminder.chat_id, "followup_skipped", { reason: "max_followups", maxFollowups });
+  }
+  return rows.length;
 }
 
 export function getStatsByChatId(chatId: string, now = new Date()): ReminderStats {

@@ -15,7 +15,7 @@ function formatDate(value: string): string {
 function statusLabel(status: Reminder["status"]): string {
   if (status === "pending") return "ממתינה";
   if (status === "sending") return "בשליחה";
-  if (status === "notified") return "נשלחה, ממתינה לאישור";
+  if (status === "notified") return "ממתין לאישור ביצוע";
   if (status === "done") return "בוצעה";
   return "בוטלה";
 }
@@ -63,6 +63,13 @@ export function ReminderCard({
           </div>
           <h3 className="text-lg font-black text-ink">{reminder.task}</h3>
           <p className="mt-1 text-sm text-ink/65">{formatDate(reminder.dueAt)}</p>
+          {reminder.status === "notified" ? (
+            <div className="mt-3 grid gap-1 text-sm text-ink/65">
+              <p>תזכורות חוזרות: {reminder.followupCount}</p>
+              {reminder.lastFollowupAt ? <p>אחרונה: {formatDate(reminder.lastFollowupAt)}</p> : null}
+              {reminder.nextFollowupAt ? <p>הבאה: {formatDate(reminder.nextFollowupAt)}</p> : null}
+            </div>
+          ) : null}
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
           <button

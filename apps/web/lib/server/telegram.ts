@@ -1,6 +1,7 @@
 import {
   cancelReminder,
   createReminder,
+  deferReminderFollowup,
   getOverdueRemindersByChatId,
   getRecurringRemindersByChatId,
   getRemindersByChatId,
@@ -47,7 +48,7 @@ function keyboard(reminders: Reminder[]) {
     .flatMap((reminder) => [
       [
         { text: `✅ בוצע #${reminder.id}`, callback_data: `done:${reminder.id}` },
-        { text: `🕒 דחה #${reminder.id}`, callback_data: `snooze:${reminder.id}:10m` },
+        { text: `🕒 דחה #${reminder.id}`, callback_data: `snooze_menu:${reminder.id}` },
         { text: `🗑️ בטל #${reminder.id}`, callback_data: `cancel:${reminder.id}` }
       ]
     ]);
@@ -86,7 +87,29 @@ async function sendList(chatId: string, title: string, reminders: Reminder[]): P
 function snoozeDateFromPreset(preset: string): string {
   const now = new Date();
   if (preset === "10m") return new Date(now.getTime() + 10 * 60_000).toISOString().slice(0, 19);
+  if (preset === "30m") return new Date(now.getTime() + 30 * 60_000).toISOString().slice(0, 19);
+  if (preset === "tomorrow_9") {
+    const tomorrow = new Date(now);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+    tomorrow.setHours(9, 0, 0, 0);
+    return new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+  }
   return new Date(now.getTime() + 60 * 60_000).toISOString().slice(0, 19);
+}
+
+function snoozeKeyboard(id: number) {
+  return {
+    inline_keyboard: [
+      [
+        { text: "10 דקות", callback_data: `snooze:${id}:10m` },
+        { text: "30 דקות", callback_data: `snooze:${id}:30m` }
+      ],
+      [
+        { text: "שעה", callback_data: `snooze:${id}:1h` },
+        { text: "מחר 09:00", callback_data: `snooze:${id}:tomorrow_9` }
+      ]
+    ]
+  };
 }
 
 async function handleText(chatId: string, text: string): Promise<void> {
@@ -118,7 +141,7 @@ async function handleText(chatId: string, text: string): Promise<void> {
   if (commandId) {
     const id = Number(commandId[2]);
     const ok = commandId[1] === "done" ? await markReminderDone(chatId, id) : await cancelReminder(chatId, id);
-    await sendMessage(chatId, ok ? "בוצע ✅" : "לא מצאתי תזכורת מתאימה.");
+    await sendMessage(chatId, ok ? (commandId[1] === "done" ? "מעולה ✅ סימנתי כבוצע" : "בוטל ✅") : "לא מצאתי תזכורת מתאימה.");
     return;
   }
 
@@ -149,9 +172,23 @@ async function handleCallback(callback: TelegramCallback): Promise<void> {
   let ok = false;
   if (action === "done") ok = await markReminderDone(chatId, id);
   if (action === "cancel") ok = await cancelReminder(chatId, id);
+  if (action === "not_now") ok = await deferReminderFollowup(chatId, id);
+  if (action === "snooze_menu") {
+    await answerCallbackQuery(callback.id);
+    await sendMessage(chatId, "לכמה זמן לדחות?", snoozeKeyboard(id));
+    return;
+  }
   if (action === "snooze") ok = Boolean(await snoozeReminder(chatId, id, snoozeDateFromPreset(preset)));
   await answerCallbackQuery(callback.id, ok ? "בוצע" : "לא נמצא");
-  await sendMessage(chatId, ok ? "עודכן ✅" : "לא מצאתי תזכורת מתאימה.");
+  const successText =
+    action === "done"
+      ? "מעולה ✅ סימנתי כבוצע"
+      : action === "not_now"
+        ? "סבבה, אזכיר לך שוב בעוד 5 דקות."
+        : action === "cancel"
+          ? "ביטלתי ✅"
+          : "דחיתי ✅";
+  await sendMessage(chatId, ok ? successText : "לא מצאתי תזכורת מתאימה.");
 }
 
 export async function processTelegramUpdate(update: TelegramUpdate): Promise<void> {

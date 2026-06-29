@@ -87,6 +87,9 @@ export interface Reminder {
   completedAt: string | null;
   lastSnoozedAt: string | null;
   snoozeCount: number;
+  nextFollowupAt: string | null;
+  followupCount: number;
+  lastFollowupAt: string | null;
   sourceText: string | null;
 }
 

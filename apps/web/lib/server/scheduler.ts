@@ -1,4 +1,14 @@
-import { claimDueReminder, markReminderNotifiedAfterSend, recoverStaleSendingReminders, releaseReminderAfterSendFailure, rescheduleRecurringReminder } from "./db";
+import {
+  claimDueFollowupReminder,
+  claimDueReminder,
+  clearMaxedFollowups,
+  markFollowupSent,
+  markReminderNotifiedAfterSend,
+  recoverStaleSendingReminders,
+  releaseFollowupAfterSendFailure,
+  releaseReminderAfterSendFailure,
+  rescheduleRecurringReminder
+} from "./db";
 import { sendMessage } from "./telegram";
 
 function nowLocalIso(): string {
@@ -6,14 +16,17 @@ function nowLocalIso(): string {
   return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
 }
 
-function sentKeyboard(id: number) {
+function completionKeyboard(id: number) {
   return {
     inline_keyboard: [
       [
-        { text: "✅ בוצע", callback_data: `done:${id}` },
-        { text: "🕒 עוד 10 דקות", callback_data: `snooze:${id}:10m` }
+        { text: "✅ ביצעתי", callback_data: `done:${id}` },
+        { text: "🕒 דחה", callback_data: `snooze_menu:${id}` }
       ],
-      [{ text: "🗑️ בטל", callback_data: `cancel:${id}` }]
+      [
+        { text: "❌ לא עכשיו", callback_data: `not_now:${id}` },
+        { text: "🗑️ בטל", callback_data: `cancel:${id}` }
+      ]
     ]
   };
 }
@@ -28,7 +41,11 @@ export async function runSchedulerOnce(limit = 25): Promise<{ ok: true; sent: nu
     if (!reminder) break;
     try {
       const isRecurring = Boolean(reminder.recurrenceType);
-      await sendMessage(reminder.chatId, isRecurring ? `⏰ תזכורת קבועה: ${reminder.task}` : `⏰ תזכורת: ${reminder.task}`, sentKeyboard(reminder.id));
+      await sendMessage(
+        reminder.chatId,
+        isRecurring ? `⏰ תזכורת קבועה: ${reminder.task}` : `⏰ תזכורת: ${reminder.task}\n\nהאם ביצעת?`,
+        completionKeyboard(reminder.id)
+      );
       if (reminder.recurrenceType) {
         const next = await rescheduleRecurringReminder(reminder);
         await sendMessage(reminder.chatId, `התזכורת הבאה נקבעה ל-${next.dueAt.replace("T", " ")}`);
@@ -39,6 +56,21 @@ export async function runSchedulerOnce(limit = 25): Promise<{ ok: true; sent: nu
     } catch {
       failed += 1;
       await releaseReminderAfterSendFailure(reminder.id);
+    }
+  }
+
+  await clearMaxedFollowups();
+
+  for (let i = 0; i < limit; i += 1) {
+    const reminder = await claimDueFollowupReminder(nowLocalIso());
+    if (!reminder) break;
+    try {
+      await sendMessage(reminder.chatId, `⏰ תזכורת חוזרת:\n${reminder.task}\n\nהאם ביצעת?`, completionKeyboard(reminder.id));
+      await markFollowupSent(reminder);
+      sent += 1;
+    } catch {
+      failed += 1;
+      await releaseFollowupAfterSendFailure(reminder);
     }
   }
 

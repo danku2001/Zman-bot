@@ -9,15 +9,19 @@ process.env.DATABASE_PATH = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "zma
 
 const dbModule = require("./db") as typeof import("./db");
 const {
+  claimDueFollowupReminder,
   claimReminderForSending,
+  clearMaxedFollowups,
   createReminder,
   db,
   cancelReminder,
+  deferReminderFollowup,
   findMatchingReminders,
   getReminderEventsByChatId,
   getOverdueRemindersByChatId,
   getReminderById,
   importReminders,
+  markFollowupSent,
   markReminderDone,
   markReminderNotifiedAfterSend,
   recoverStaleSendingReminders,
@@ -35,6 +39,10 @@ function createTestReminder(overrides: Partial<Parameters<typeof createReminder>
   });
 }
 
+function clearDueFollowups() {
+  db.prepare("UPDATE reminders SET next_followup_at = NULL").run();
+}
+
 test("one-time reminder becomes notified after send", () => {
   const reminder = createTestReminder();
   assert.equal(claimReminderForSending(reminder.id), true);
@@ -45,6 +53,8 @@ test("one-time reminder becomes notified after send", () => {
   assert.equal(updated?.status, "notified");
   assert.equal(updated?.sendingAt, null);
   assert.ok(updated?.sentAt);
+  assert.ok(updated?.nextFollowupAt);
+  assert.equal(updated?.followupCount, 0);
 });
 
 test("done changes notified reminder to done", () => {
@@ -57,7 +67,9 @@ test("done changes notified reminder to done", () => {
   const updated = getReminderById(reminder.id);
   assert.equal(updated?.status, "done");
   assert.equal(updated?.sendingAt, null);
+  assert.equal(updated?.nextFollowupAt, null);
   assert.ok(updated?.completedAt);
+  assert.equal(getReminderEventsByChatId("test-chat").some((event) => event.eventType === "followup_stopped_done" && event.reminderId === reminder.id), true);
 });
 
 test("snooze changes notified reminder to pending with a new due_at", () => {
@@ -70,7 +82,69 @@ test("snooze changes notified reminder to pending with a new due_at", () => {
   assert.equal(snoozed?.status, "pending");
   assert.equal(snoozed?.dueAt, "2026-06-29T11:00:00");
   assert.equal(snoozed?.sendingAt, null);
+  assert.equal(snoozed?.nextFollowupAt, null);
   assert.equal(snoozed?.snoozeCount, 1);
+});
+
+test("not now defers notified reminder follow-up by five minutes", () => {
+  const reminder = createTestReminder({ task: "לא עכשיו" });
+  assert.equal(claimReminderForSending(reminder.id), true);
+  assert.equal(markReminderNotifiedAfterSend(reminder), true);
+  assert.equal(deferReminderFollowup("test-chat", reminder.id), true);
+
+  const updated = getReminderById(reminder.id);
+  assert.equal(updated?.status, "notified");
+  assert.ok(updated?.nextFollowupAt);
+  assert.equal(getReminderEventsByChatId("test-chat").some((event) => event.eventType === "followup_skipped" && event.reminderId === reminder.id), true);
+});
+
+test("follow-up reminder sends every five minutes when not done", () => {
+  clearDueFollowups();
+  const reminder = createTestReminder({ task: "מעקב כל חמש דקות" });
+  assert.equal(claimReminderForSending(reminder.id), true);
+  assert.equal(markReminderNotifiedAfterSend(reminder), true);
+  db.prepare("UPDATE reminders SET next_followup_at = ? WHERE id = ?").run("2026-06-29T10:05:00", reminder.id);
+
+  const claimed = claimDueFollowupReminder("2026-06-29T10:05:00");
+  assert.equal(claimed?.id, reminder.id);
+  assert.equal(claimDueFollowupReminder("2026-06-29T10:05:00"), null);
+  assert.equal(markFollowupSent(claimed!), true);
+
+  const updated = getReminderById(reminder.id);
+  assert.equal(updated?.status, "notified");
+  assert.equal(updated?.followupCount, 1);
+  assert.ok(updated?.lastFollowupAt);
+  assert.ok(updated?.nextFollowupAt);
+  assert.equal(getReminderEventsByChatId("test-chat").some((event) => event.eventType === "followup_sent" && event.reminderId === reminder.id), true);
+});
+
+test("cancel stops follow-up reminders", () => {
+  const reminder = createTestReminder({ task: "ביטול מעקב" });
+  assert.equal(claimReminderForSending(reminder.id), true);
+  assert.equal(markReminderNotifiedAfterSend(reminder), true);
+
+  assert.equal(cancelReminder("test-chat", reminder.id), true);
+
+  const updated = getReminderById(reminder.id);
+  assert.equal(updated?.status, "cancelled");
+  assert.equal(updated?.nextFollowupAt, null);
+  assert.equal(getReminderEventsByChatId("test-chat").some((event) => event.eventType === "followup_stopped_cancelled" && event.reminderId === reminder.id), true);
+});
+
+test("max follow-up limit prevents endless reminders", () => {
+  clearDueFollowups();
+  const reminder = createTestReminder({ task: "תקרת מעקבים" });
+  assert.equal(claimReminderForSending(reminder.id), true);
+  assert.equal(markReminderNotifiedAfterSend(reminder), true);
+  db.prepare("UPDATE reminders SET followup_count = ?, next_followup_at = ? WHERE id = ?").run(12, "2026-06-29T10:05:00", reminder.id);
+
+  assert.equal(claimDueFollowupReminder("2026-06-29T10:05:00", 12), null);
+  assert.equal(clearMaxedFollowups(12), 1);
+
+  const updated = getReminderById(reminder.id);
+  assert.equal(updated?.status, "notified");
+  assert.equal(updated?.nextFollowupAt, null);
+  assert.equal(getReminderEventsByChatId("test-chat").some((event) => event.eventType === "followup_skipped" && event.reminderId === reminder.id), true);
 });
 
 test("stale sending reminder recovers to pending", () => {

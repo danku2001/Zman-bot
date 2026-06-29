@@ -127,7 +127,7 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
             <option value="">הכל</option>
             <option value="pending">ממתינה</option>
             <option value="sending">בשליחה</option>
-            <option value="notified">נשלחה</option>
+            <option value="notified">ממתינות לאישור ביצוע</option>
             <option value="done">בוצעה</option>
             <option value="cancelled">בוטלה</option>
           </select>
