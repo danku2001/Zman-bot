@@ -1,6 +1,6 @@
 export type ReminderStatus = "pending" | "sending" | "notified" | "done" | "cancelled";
 export type RecurrenceType = "daily" | "weekly" | "monthly" | "yearly" | "custom_weekdays";
-export type ReminderPriority = "רגיל" | "חשוב" | "דחוף";
+export type ReminderPriority = "נמוך" | "רגיל" | "חשוב" | "דחוף";
 export type BotIntent =
   | "create"
   | "quick_capture"

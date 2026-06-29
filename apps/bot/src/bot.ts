@@ -22,12 +22,12 @@ import {
 } from "./db";
 import { logger } from "./logger";
 import { parseReminderMessage, parseUserMessage } from "./parser";
-import type { BotIntent, Reminder, Recurrence } from "./types";
+import type { BotIntent, Reminder, ReminderPriority, Recurrence } from "./types";
 
 export const bot = new Telegraf(config.telegramBotToken || "missing-token");
 type ReplyFn = (text: string, extra?: object) => Promise<unknown>;
-const pendingQuickCapture = new Map<string, { task: string; category?: string; priority?: "רגיל" | "חשוב" | "דחוף" }>();
-const pendingCreateConfirmations = new Map<string, { task: string; dueAt: string; recurrence: Recurrence | null; category?: "כללי" | string; priority?: "רגיל" | "חשוב" | "דחוף"; sourceText?: string }>();
+const pendingQuickCapture = new Map<string, { task: string; category?: string; priority?: ReminderPriority }>();
+const pendingCreateConfirmations = new Map<string, { task: string; dueAt: string; recurrence: Recurrence | null; category?: "כללי" | string; priority?: ReminderPriority; sourceText?: string }>();
 const pendingBulkConfirmations = new Map<string, { action: "clear_done" | "cancel_today" | "cancel_all" }>();
 
 function replyFor(ctx: Context): ReplyFn {
@@ -55,6 +55,7 @@ function formatTime(value: string | null | undefined): string {
 function priorityLabel(reminder: Reminder): string {
   if (reminder.priority === "דחוף") return " 🔥 דחוף";
   if (reminder.priority === "חשוב") return " ⭐ חשוב";
+  if (reminder.priority === "נמוך") return " נמוך";
   return "";
 }
 

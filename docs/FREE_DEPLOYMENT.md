@@ -34,6 +34,7 @@ npm run build
 5. הטבלאות שנוצרות:
    - `reminders`
    - `reminder_events`
+   - `processed_updates`
 
 ## 3. Vercel Free
 
@@ -136,7 +137,8 @@ https://YOUR_VERCEL_DOMAIN/api/scheduler/run?secret=CRON_SECRET
   "ok": true,
   "sent": 0,
   "recovered": 0,
-  "failed": 0
+  "failed": 0,
+  "durationMs": 123
 }
 ```
 
@@ -154,8 +156,9 @@ https://YOUR_VERCEL_DOMAIN/api/scheduler/run?secret=CRON_SECRET
 5. היכנסו לדשבורד ב-Vercel.
 6. בדקו שהתזכורות מופיעות.
 7. בדקו `done`, `snooze`, ו-`cancel`.
-8. בדקו export/import במסך Settings.
-9. במסך reminders לחצו `בדוק סנכרון` וודאו שה-counts תואמים ל-Chat ID.
+8. בדקו `/week` וודאו שמשימות שבוצעו לא מופיעות; בדקו `/completed` כדי לראות אותן בנפרד.
+9. בדקו export/import במסך Settings.
+10. במסך reminders לחצו `בדוק סנכרון` וודאו שה-counts תואמים ל-Chat ID.
 
 ## 7. Debug Sync
 

@@ -603,7 +603,7 @@ export function getStatsByChatId(chatId: string, now = new Date()): ReminderStat
       acc[reminder.priority] += 1;
       return acc;
     },
-    { רגיל: 0, חשוב: 0, דחוף: 0 }
+      { נמוך: 0, רגיל: 0, חשוב: 0, דחוף: 0 }
   );
   return {
     totalActive: active.length,

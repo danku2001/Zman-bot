@@ -13,8 +13,10 @@ const navItems = [
   { href: "/today", label: "היום" },
   { href: "/tomorrow", label: "מחר" },
   { href: "/week", label: "השבוע" },
+  { href: "/calendar", label: "לוח" },
   { href: "/recurring", label: "קבועות" },
   { href: "/overdue", label: "באיחור" },
+  { href: "/stats", label: "סטטיסטיקות" },
   { href: "/search", label: "חיפוש" },
   { href: "/create", label: "יצירה" },
   { href: "/settings", label: "הגדרות" }

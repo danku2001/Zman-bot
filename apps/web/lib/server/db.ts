@@ -424,7 +424,7 @@ export async function getStatsByChatId(chatId: string, now = new Date()): Promis
         acc[reminder.priority] += 1;
         return acc;
       },
-      { רגיל: 0, חשוב: 0, דחוף: 0 }
+      { נמוך: 0, רגיל: 0, חשוב: 0, דחוף: 0 }
     )
   };
 }

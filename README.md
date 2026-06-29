@@ -1,6 +1,27 @@
-# ZmanBot
+# ZmanBot Super Release
 
 ZmanBot הוא בוט תזכורות חכם בעברית לטלגרם, עם דשבורד ניהול ב-Next.js. המשתמש כותב הודעות טבעיות כמו `תזכיר לי מחר ב-9 לשלוח מייל`, והבוט שומר תזכורת ושולח אותה בזמן לפי אזור הזמן `Asia/Jerusalem`.
+
+**Repository description suggestion:** Hebrew Telegram reminder bot with natural-language parsing, recurring reminders, synchronized Next.js RTL dashboard, Neon Postgres, and free Vercel deployment.
+
+**Topics suggestion:** `telegram-bot`, `nextjs`, `typescript`, `hebrew`, `reminders`, `postgres`, `vercel`, `tailwindcss`, `telegraf`
+
+## What I Built
+
+Built a production-ready Hebrew reminder system with Telegram integration, natural-language parsing, persistent storage, scheduled delivery, REST API, authentication, and a responsive RTL dashboard.
+
+## מה בניתי
+
+מערכת תזכורות מלאה בעברית: בוט Telegram, parser לשפה טבעית, תזכורות חוזרות, מסד נתונים קבוע, scheduler לשליחה בזמן, API מאובטח, ודשבורד RTL מסונכרן.
+
+## Screenshots
+
+Screenshots are not committed yet. Recommended captures before sharing publicly:
+
+- Telegram reminder creation and delivery.
+- Dashboard home with stats.
+- Reminder list with sync debug panel.
+- Mobile dashboard view.
 
 ## מה יש בפרויקט
 
@@ -13,6 +34,8 @@ ZmanBot הוא בוט תזכורות חכם בעברית לטלגרם, עם דש
 - Neon Free Postgres לפרודקשן דרך `DATABASE_URL`
 - דשבורד RTL בעברית עם Next.js, TypeScript ו-Tailwind CSS
 - מודל סטטוסים מלא: `pending`, `sending`, `notified`, `done`, `cancelled`
+- Follow-up reminders: אחרי שליחה הבוט שואל אם ביצעת ומזכיר שוב כל 5 דקות עד 12 פעמים, עד done/snooze/cancel
+- Debug sync panel, export/import, event timeline, dashboard login עם HTTP-only cookie
 
 ## יצירת בוט בטלגרם
 
@@ -57,6 +80,19 @@ NEXT_PUBLIC_API_URL=http://localhost:4000
 ```
 
 ב-Vercel השאירו `NEXT_PUBLIC_API_URL` ריק כדי שהדשבורד יעבוד מול `/api/*` באותו domain, בלי לחשוף secret לדפדפן.
+
+### משתני סביבה לפרודקשן
+
+```env
+DATABASE_URL=postgresql://...
+TELEGRAM_BOT_TOKEN=...
+TELEGRAM_WEBHOOK_URL=https://YOUR_DOMAIN/api/telegram/webhook
+TELEGRAM_WEBHOOK_SECRET=strong-random-secret
+API_SECRET=strong-random-secret
+CRON_SECRET=strong-random-secret
+DASHBOARD_PASSWORD=strong-dashboard-password
+TZ=Asia/Jerusalem
+```
 
 ## הרצה
 
@@ -167,6 +203,7 @@ npm run dev:web
 - `/morning` - סיכום יומי עם היום, איחורים ובוצעו
 - `/tomorrow` - תזכורות למחר
 - `/week` - תזכורות לשבוע הקרוב
+- `/completed` - משימות שכבר בוצעו
 - `/week_summary` - סיכום שבועי לפי ימים
 - `/recurring` - תזכורות קבועות
 - `/overdue` - תזכורות באיחור
@@ -178,7 +215,7 @@ npm run dev:web
 - `/clear_done` - ניקוי תזכורות שבוצעו
 - `/stats` - סטטיסטיקות
 
-בפקודות `/list` ו-`/today` הבוט מציג גם כפתורי ביטול לתזכורות פעילות.
+בפקודות `/list`, `/today`, ו-`/week` הבוט מציג תזכורות פעילות בלבד. משימות שבוצעו זמינות דרך `/completed` או הכפתור `בוצעו`.
 
 אפשר גם לדבר טבעי:
 
@@ -230,6 +267,7 @@ npm run dev:web
 
 - `GET /health`
 - `GET /api/health`
+- `GET /api/auth/me`
 - `POST /api/telegram/webhook`
 - `GET /api/scheduler/run?secret=...`
 - `GET /api/debug/sync?chat_id=...`
@@ -281,6 +319,16 @@ npm run build
 ```
 
 הבדיקות כוללות parser בעברית עבור זמנים יחסיים, היום/מחר, תאריכים עתידיים, תזכורות קבועות, intentים כמו רשימה/חיפוש/מחיקה, וחישוב המועד הבא לתזכורות קבועות.
+
+## QA Checklist
+
+- שלחו `/id` בטלגרם והכניסו את ה-Chat ID בדשבורד.
+- צרו תזכורת בטלגרם וודאו שהיא מופיעה בדשבורד.
+- צרו תזכורת בדשבורד וודאו שה-scheduler שולח אותה בטלגרם.
+- בדקו done, snooze, cancel גם מטלגרם וגם מהדשבורד.
+- בדקו `/week` בלי משימות שבוצעו, ואז `/completed`.
+- בדקו `/api/debug/sync?chat_id=...` אחרי login.
+- הריצו `npm run test`, `npm run lint`, `npm run build`.
 
 ## פתרון תקלות
 

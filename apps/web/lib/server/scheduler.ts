@@ -31,7 +31,8 @@ function completionKeyboard(id: number) {
   };
 }
 
-export async function runSchedulerOnce(limit = 25): Promise<{ ok: true; sent: number; recovered: number; failed: number }> {
+export async function runSchedulerOnce(limit = 25): Promise<{ ok: true; sent: number; recovered: number; failed: number; durationMs: number }> {
+  const startedAt = Date.now();
   const recovered = await recoverStaleSendingReminders();
   let sent = 0;
   let failed = 0;
@@ -74,5 +75,5 @@ export async function runSchedulerOnce(limit = 25): Promise<{ ok: true; sent: nu
     }
   }
 
-  return { ok: true, sent, recovered, failed };
+  return { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt };
 }

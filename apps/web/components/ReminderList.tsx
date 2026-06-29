@@ -136,7 +136,7 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
           <span className="mb-2 block text-sm font-bold text-ink">קטגוריה</span>
           <select value={category} onChange={(event) => setCategory(event.target.value)} className="w-full rounded-md border border-ink/15 bg-white px-3 py-2">
             <option value="">הכל</option>
-            {["כללי", "עבודה", "אישי", "בריאות", "כסף", "לימודים", "משפחה", "קניות"].map((item) => (
+            {["כללי", "עבודה", "אישי", "בריאות", "כספים", "לימודים", "משפחה", "קניות"].map((item) => (
               <option key={item} value={item}>{item}</option>
             ))}
           </select>
@@ -145,7 +145,7 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
           <span className="mb-2 block text-sm font-bold text-ink">עדיפות</span>
           <select value={priority} onChange={(event) => setPriority(event.target.value)} className="w-full rounded-md border border-ink/15 bg-white px-3 py-2">
             <option value="">הכל</option>
-            {["רגיל", "חשוב", "דחוף"].map((item) => (
+            {["נמוך", "רגיל", "חשוב", "דחוף"].map((item) => (
               <option key={item} value={item}>{item}</option>
             ))}
           </select>

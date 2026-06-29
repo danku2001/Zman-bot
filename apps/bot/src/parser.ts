@@ -15,8 +15,8 @@ const helpfulError =
 const defaultReminderHour = 9;
 const defaultReminderMinute = 0;
 const defaultCategory = "כללי";
-const categories = ["כללי", "עבודה", "אישי", "בריאות", "כסף", "לימודים", "משפחה", "קניות"];
-const priorities: ReminderPriority[] = ["דחוף", "חשוב", "רגיל"];
+const categories = ["כללי", "עבודה", "אישי", "בריאות", "כספים", "כסף", "לימודים", "משפחה", "קניות"];
+const priorities: ReminderPriority[] = ["דחוף", "חשוב", "רגיל", "נמוך"];
 
 const hebrewHours = new Map<string, number>([
   ["אחת", 1],

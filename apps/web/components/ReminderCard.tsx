@@ -35,6 +35,7 @@ function recurrenceLabel(reminder: Reminder): string | null {
 function priorityLabel(reminder: Reminder): string {
   if (reminder.priority === "דחוף") return "דחוף 🔥";
   if (reminder.priority === "חשוב") return "חשוב ⭐";
+  if (reminder.priority === "נמוך") return "נמוך";
   return "רגיל";
 }
 
