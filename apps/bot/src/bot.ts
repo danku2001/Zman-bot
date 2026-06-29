@@ -251,12 +251,13 @@ function helpText(): string {
     "מה יש לי השבוע?",
     "בטל את התזכורת להתקשר לאמא",
     "",
-    "פקודות: /morning, /list, /today, /week, /week_summary, /recurring, /overdue, /search <טקסט>, /done <id>, /delete <id>, /snooze <id> <זמן>, /stats"
+    "פקודות: /id, /morning, /list, /today, /week, /week_summary, /recurring, /overdue, /search <טקסט>, /done <id>, /delete <id>, /snooze <id> <זמן>, /stats"
   ].join("\n");
 }
 
 bot.start((ctx) => void ctx.reply("שלום! שלחו לי תזכורת בעברית טבעית, למשל: מחר ב-9 תזכיר לי לשלוח מייל"));
 bot.help((ctx) => void ctx.reply(helpText()));
+bot.command("id", (ctx) => void ctx.reply(`ה-Chat ID שלך הוא:\n${ctx.chat.id}`));
 
 bot.command("list", (ctx) => void sendReminderList(String(ctx.chat.id), replyFor(ctx), "כל התזכורות שלך:", getRemindersByChatId(String(ctx.chat.id))));
 bot.command("today", (ctx) => void sendReminderList(String(ctx.chat.id), replyFor(ctx), "מה יש לך היום:", getTodayRemindersByChatId(String(ctx.chat.id))));

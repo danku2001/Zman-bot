@@ -4,6 +4,9 @@ dist
 .env
 .DS_Store
 *.log
+secrets
+secrets.*
+*.secret
 data/*.db
 data/*.db-shm
 data/*.db-wal
