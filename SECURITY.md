@@ -2,7 +2,7 @@
 
 ## Never Commit Secrets
 
-Never commit `TELEGRAM_BOT_TOKEN`, `API_SECRET`, real `.env` files, SQLite databases, logs, or deployment secrets.
+Never commit `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `DATABASE_URL`, `API_SECRET`, `CRON_SECRET`, `DASHBOARD_PASSWORD`, real `.env` files, SQLite databases, logs, or deployment secrets.
 
 This repository includes `.env.example` files only. Real values belong in local `.env` files or in your hosting provider's environment variables.
 
@@ -32,6 +32,9 @@ Keep real values only in local `.env` files or provider secrets:
 ```env
 TELEGRAM_BOT_TOKEN=...
 API_SECRET=...
+DATABASE_URL=...
+CRON_SECRET=...
+DASHBOARD_PASSWORD=...
 ```
 
 Do not paste secrets into README files, GitHub issues, screenshots, logs, or commits.
@@ -44,4 +47,4 @@ Do not paste secrets into README files, GitHub issues, screenshots, logs, or com
 Authorization: Bearer YOUR_API_SECRET
 ```
 
-The dashboard sends this header when `NEXT_PUBLIC_API_SECRET` is configured.
+For the Vercel deployment, keep `/api/*` same-origin and do not expose server secrets to browser JavaScript. Use `DASHBOARD_PASSWORD` for the dashboard login cookie and `CRON_SECRET` for `/api/scheduler/run`.

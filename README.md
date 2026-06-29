@@ -8,7 +8,9 @@ ZmanBot הוא בוט תזכורות חכם בעברית לטלגרם, עם דש
 - Parser בעברית לתזכורות חד-פעמיות, יומיות ושבועיות
 - SQLite מקומי עם `better-sqlite3`
 - Scheduler שרץ כל דקה עם `node-cron`
-- Express API קטן לניהול תזכורות
+- Express API מקומי לניהול תזכורות
+- Next.js Route Handlers לפריסה חינמית ב-Vercel
+- Neon Free Postgres לפרודקשן דרך `DATABASE_URL`
 - דשבורד RTL בעברית עם Next.js, TypeScript ו-Tailwind CSS
 - מודל סטטוסים מלא: `pending`, `sending`, `notified`, `done`, `cancelled`
 
@@ -52,8 +54,9 @@ cp apps/web/.env.example apps/web/.env
 
 ```env
 NEXT_PUBLIC_API_URL=http://localhost:4000
-NEXT_PUBLIC_API_SECRET=
 ```
+
+ב-Vercel השאירו `NEXT_PUBLIC_API_URL` ריק כדי שהדשבורד יעבוד מול `/api/*` באותו domain, בלי לחשוף secret לדפדפן.
 
 ## הרצה
 
@@ -91,20 +94,11 @@ npm run dev:web
 - הגדירו סודות רק ב-Render/GitHub/סביבת השרת, לא בתוך הקוד.
 - אם טוקן Telegram דלף, סובבו אותו מיד דרך BotFather.
 
-## הפעלה 24/7 בענן
+## הפעלה 24/7 בחינם
 
-כדי שהבוט ישלח תזכורות גם כשהמחשב כבוי, חייבים להריץ אותו על שרת קבוע. הפרויקט כולל `render.yaml` לפריסה ב-Render:
+לפריסה חינמית מלאה משתמשים ב-Vercel Hobby, Neon Free Postgres, cron-job.org Free, GitHub ו-Telegram Bot API. אין צורך ב-Render, Docker, Supabase, OpenAI, או דיסק בתשלום.
 
-1. העלו את תיקיית `zmanbot` לריפו ב-GitHub.
-2. ב-Render צרו Blueprint חדש מהריפו.
-3. ודאו שנוצר השירות `zmanbot-api`.
-4. הוסיפו Environment Variable בשם `TELEGRAM_BOT_TOKEN` עם הטוקן מ-BotFather.
-5. ודאו שקיים Persistent Disk בנתיב `/var/data`.
-6. פרסו את השירות ובדקו ש-`/health` מחזיר `{ "ok": true }`.
-
-חשוב: SQLite חייב דיסק קבוע. בלי Persistent Disk, תזכורות יישמרו רק זמנית ועלולות להימחק בריסטארט או בפריסה מחדש.
-
-הדשבורד יכול להמשיך לרוץ מקומית, או להיפרס כשירות נפרד. אם פורסים אותו, הגדירו `NEXT_PUBLIC_API_URL` לכתובת ה-API בענן.
+ראו מדריך מלא ב-[docs/FREE_DEPLOYMENT.md](docs/FREE_DEPLOYMENT.md).
 
 ## הודעות לבדיקה
 
@@ -232,6 +226,9 @@ npm run dev:web
 אפשר להעביר `chat_id` כ-query param או בגוף הבקשה.
 
 - `GET /health`
+- `GET /api/health`
+- `POST /api/telegram/webhook`
+- `GET /api/scheduler/run?secret=...`
 - `GET /api/stats`
 - `GET /api/events`
 - `GET /api/reminders?chat_id=...`

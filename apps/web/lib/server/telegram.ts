@@ -1,0 +1,162 @@
+import {
+  cancelReminder,
+  createReminder,
+  getOverdueRemindersByChatId,
+  getRecurringRemindersByChatId,
+  getRemindersByChatId,
+  getStatsByChatId,
+  getTodayRemindersByChatId,
+  getWeekRemindersByChatId,
+  markReminderDone,
+  searchRemindersByChatId,
+  snoozeReminder
+} from "./db";
+import { parseReminderMessage, parseUserMessage } from "./parser";
+import type { Reminder } from "../types";
+
+type TelegramMessage = { message_id: number; chat: { id: number | string }; text?: string };
+type TelegramCallback = { id: string; data?: string; message?: TelegramMessage };
+export type TelegramUpdate = { update_id: number; message?: TelegramMessage; callback_query?: TelegramCallback };
+
+function token(): string {
+  if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is required");
+  return process.env.TELEGRAM_BOT_TOKEN;
+}
+
+async function telegram(method: string, body: unknown): Promise<void> {
+  const response = await fetch(`https://api.telegram.org/bot${token()}/${method}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body)
+  });
+  if (!response.ok) throw new Error(`Telegram ${method} failed with ${response.status}`);
+}
+
+export async function sendMessage(chatId: string, text: string, replyMarkup?: unknown): Promise<void> {
+  await telegram("sendMessage", { chat_id: chatId, text, reply_markup: replyMarkup });
+}
+
+async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
+  await telegram("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
+}
+
+function keyboard(reminders: Reminder[]) {
+  const rows = reminders
+    .filter((reminder) => reminder.status === "pending" || reminder.status === "sending" || reminder.status === "notified")
+    .slice(0, 8)
+    .flatMap((reminder) => [
+      [
+        { text: `✅ בוצע #${reminder.id}`, callback_data: `done:${reminder.id}` },
+        { text: `🕒 דחה #${reminder.id}`, callback_data: `snooze:${reminder.id}:10m` },
+        { text: `🗑️ בטל #${reminder.id}`, callback_data: `cancel:${reminder.id}` }
+      ]
+    ]);
+  return { inline_keyboard: rows };
+}
+
+function formatDate(value: string): string {
+  return new Intl.DateTimeFormat("he-IL", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: process.env.TZ ?? "Asia/Jerusalem"
+  }).format(new Date(value));
+}
+
+function statusLabel(reminder: Reminder): string {
+  if (reminder.status === "pending") return "פתוחה";
+  if (reminder.status === "sending") return "בשליחה";
+  if (reminder.status === "notified") return "נשלחה";
+  if (reminder.status === "done") return "בוצעה";
+  return "בוטלה";
+}
+
+function formatReminder(reminder: Reminder, index: number): string {
+  return `${index + 1}. #${reminder.id} ${formatDate(reminder.dueAt)} - ${reminder.task} · ${statusLabel(reminder)}`;
+}
+
+async function sendList(chatId: string, title: string, reminders: Reminder[]): Promise<void> {
+  if (!reminders.length) {
+    await sendMessage(chatId, `${title}\nאין תזכורות להצגה.`);
+    return;
+  }
+  const open = reminders.filter((reminder) => reminder.status === "pending" || reminder.status === "sending" || reminder.status === "notified");
+  await sendMessage(chatId, `${title}\nיש לך ${open.length} תזכורות פתוחות:\n\n${reminders.slice(0, 12).map(formatReminder).join("\n")}`, keyboard(reminders));
+}
+
+function snoozeDateFromPreset(preset: string): string {
+  const now = new Date();
+  if (preset === "10m") return new Date(now.getTime() + 10 * 60_000).toISOString().slice(0, 19);
+  return new Date(now.getTime() + 60 * 60_000).toISOString().slice(0, 19);
+}
+
+async function handleText(chatId: string, text: string): Promise<void> {
+  if (text === "/start") {
+    await sendMessage(chatId, "שלום! שלחו לי תזכורת בעברית טבעית, למשל: מחר ב-9 תזכיר לי לשלוח מייל");
+    return;
+  }
+  if (text === "/help") {
+    await sendMessage(chatId, "פקודות: /id, /list, /today, /week, /recurring, /overdue, /search <טקסט>, /done <id>, /cancel <id>, /snooze <id> <זמן>, /stats");
+    return;
+  }
+  if (text === "/id") {
+    await sendMessage(chatId, `ה-Chat ID שלך הוא:\n${chatId}`);
+    return;
+  }
+  if (text === "/list") return sendList(chatId, "כל התזכורות שלך:", await getRemindersByChatId(chatId));
+  if (text === "/today") return sendList(chatId, "מה יש לך היום:", await getTodayRemindersByChatId(chatId));
+  if (text === "/week") return sendList(chatId, "מה יש לך השבוע:", await getWeekRemindersByChatId(chatId));
+  if (text === "/recurring") return sendList(chatId, "התזכורות הקבועות שלך:", await getRecurringRemindersByChatId(chatId));
+  if (text === "/overdue") return sendList(chatId, "תזכורות באיחור:", await getOverdueRemindersByChatId(chatId));
+  if (text.startsWith("/search")) return sendList(chatId, "תוצאות חיפוש:", await searchRemindersByChatId(chatId, text.replace(/^\/search\s*/u, "")));
+  if (text === "/stats") {
+    const stats = await getStatsByChatId(chatId);
+    await sendMessage(chatId, `סטטיסטיקות:\nפתוחות: ${stats.totalActive}\nהיום: ${stats.dueToday}\nהשבוע: ${stats.dueThisWeek}\nנשלחו: ${stats.notified}\nבוצעו: ${stats.done}\nבוטלו: ${stats.cancelled}`);
+    return;
+  }
+
+  const commandId = text.match(/^\/(done|cancel|delete)\s+(\d+)/u);
+  if (commandId) {
+    const id = Number(commandId[2]);
+    const ok = commandId[1] === "done" ? await markReminderDone(chatId, id) : await cancelReminder(chatId, id);
+    await sendMessage(chatId, ok ? "בוצע ✅" : "לא מצאתי תזכורת מתאימה.");
+    return;
+  }
+
+  const snoozeId = text.match(/^\/snooze\s+(\d+)\s+(.+)$/u);
+  if (snoozeId) {
+    const parsed = parseReminderMessage(`תזכיר לי ${snoozeId[2]} זמני`);
+    const reminder = parsed.ok ? await snoozeReminder(chatId, Number(snoozeId[1]), parsed.value.dueAt) : null;
+    await sendMessage(chatId, reminder ? `דחיתי ✅\n${reminder.task}\n${formatDate(reminder.dueAt)}` : "לא הצלחתי לדחות את התזכורת.");
+    return;
+  }
+
+  const parsed = parseUserMessage(text);
+  if (parsed.intent === "create" && parsed.task && parsed.dueAt) {
+    const reminder = await createReminder(chatId, { task: parsed.task, dueAt: parsed.dueAt, recurrence: parsed.recurrence ?? null, category: parsed.category, priority: parsed.priority, sourceText: text });
+    await sendMessage(chatId, `קבעתי ✅\n${formatDate(reminder.dueAt)}\n${reminder.task}`);
+    return;
+  }
+  if (parsed.intent === "list") return sendList(chatId, "כל התזכורות שלך:", await getRemindersByChatId(chatId));
+  if (parsed.intent === "search") return sendList(chatId, "תוצאות חיפוש:", await searchRemindersByChatId(chatId, parsed.query ?? ""));
+  await sendMessage(chatId, parsed.error ?? "לא הצלחתי להבין. נסו: תזכיר לי מחר ב-9 לשלוח מייל");
+}
+
+async function handleCallback(callback: TelegramCallback): Promise<void> {
+  const chatId = callback.message?.chat.id ? String(callback.message.chat.id) : "";
+  if (!chatId || !callback.data) return;
+  const [action, idText, preset] = callback.data.split(":");
+  const id = Number(idText);
+  let ok = false;
+  if (action === "done") ok = await markReminderDone(chatId, id);
+  if (action === "cancel") ok = await cancelReminder(chatId, id);
+  if (action === "snooze") ok = Boolean(await snoozeReminder(chatId, id, snoozeDateFromPreset(preset)));
+  await answerCallbackQuery(callback.id, ok ? "בוצע" : "לא נמצא");
+  await sendMessage(chatId, ok ? "עודכן ✅" : "לא מצאתי תזכורת מתאימה.");
+}
+
+export async function processTelegramUpdate(update: TelegramUpdate): Promise<void> {
+  if (update.callback_query) return handleCallback(update.callback_query);
+  const message = update.message;
+  if (!message?.text) return;
+  await handleText(String(message.chat.id), message.text.trim());
+}
