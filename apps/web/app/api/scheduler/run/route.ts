@@ -1,19 +1,20 @@
 import { NextRequest } from "next/server";
 import { json } from "../../../../lib/server/api";
+import { isSchedulerAuthorized } from "../../../../lib/server/scheduler-auth";
 import { runSchedulerOnce } from "../../../../lib/server/scheduler";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
 
-function authorized(req: NextRequest): boolean {
-  const expected = process.env.CRON_SECRET;
-  if (!expected) return false;
-  return req.nextUrl.searchParams.get("secret") === expected || req.headers.get("authorization") === `Bearer ${expected}`;
+function limitFrom(req: NextRequest): number {
+  const raw = Number(req.nextUrl.searchParams.get("limit") ?? 25);
+  if (!Number.isInteger(raw)) return 25;
+  return Math.max(1, Math.min(raw, 25));
 }
 
 export async function GET(req: NextRequest) {
-  if (!authorized(req)) return json({ error: "Unauthorized" }, 401);
-  return json(await runSchedulerOnce());
+  if (!isSchedulerAuthorized(req)) return json({ error: "Unauthorized" }, 401);
+  return json(await runSchedulerOnce(limitFrom(req)));
 }
 
 export async function POST(req: NextRequest) {

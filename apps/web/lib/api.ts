@@ -93,6 +93,12 @@ export function getHealth(): Promise<{ ok: boolean; service: string; mode: strin
   return request("/api/health");
 }
 
+export function runScheduler(limit = 3): Promise<{ ok: boolean; sent: number; recovered: number; failed: number; durationMs: number }> {
+  return request(`/api/scheduler/run?limit=${encodeURIComponent(String(limit))}`, {
+    method: "POST"
+  });
+}
+
 export function parseReminder(chatId: string, message: string): Promise<{ result: unknown }> {
   return request("/api/reminders/parse", {
     method: "POST",

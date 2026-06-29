@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getApiBaseError, getApiBaseLabel, getHealth, getReminders, getSyncDebug } from "../lib/api";
+import { getApiBaseError, getApiBaseLabel, getHealth, getReminders, getSyncDebug, runScheduler } from "../lib/api";
 import type { Reminder } from "../lib/types";
 import { ChatIdField, getStoredChatId } from "./ChatIdField";
 
 type HealthResult = Awaited<ReturnType<typeof getHealth>>;
 type SyncResult = Awaited<ReturnType<typeof getSyncDebug>>;
+type SchedulerResult = Awaited<ReturnType<typeof runScheduler>>;
 
 function latestFive(reminders: Reminder[]): Reminder[] {
   return reminders
@@ -21,7 +22,9 @@ export function SyncDiagnostics() {
   const [sync, setSync] = useState<SyncResult | null>(null);
   const [reminderCount, setReminderCount] = useState<number | null>(null);
   const [latest, setLatest] = useState<Reminder[]>([]);
+  const [schedulerResult, setSchedulerResult] = useState<SchedulerResult | null>(null);
   const [loading, setLoading] = useState(false);
+  const [schedulerLoading, setSchedulerLoading] = useState(false);
   const [error, setError] = useState("");
   const apiBaseLabel = useMemo(() => getApiBaseLabel(), []);
   const apiBaseError = useMemo(() => getApiBaseError(), []);
@@ -54,6 +57,21 @@ export function SyncDiagnostics() {
     }
   }
 
+  async function runSchedulerCheck() {
+    setSchedulerLoading(true);
+    setError("");
+    setSchedulerResult(null);
+    try {
+      if (apiBaseError) throw new Error(apiBaseError);
+      setSchedulerResult(await runScheduler(3));
+      if (chatId) await runDiagnostics(chatId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "בדיקת scheduler נכשלה");
+    } finally {
+      setSchedulerLoading(false);
+    }
+  }
+
   return (
     <section className="mt-6 rounded-lg border border-ink/10 bg-white p-5 shadow-soft">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -67,6 +85,13 @@ export function SyncDiagnostics() {
           className="rounded-md bg-ink px-4 py-2 font-bold text-white transition hover:bg-ink/85 disabled:bg-ink/25"
         >
           {loading ? "בודק..." : "בדוק עכשיו"}
+        </button>
+        <button
+          onClick={() => void runSchedulerCheck()}
+          disabled={schedulerLoading}
+          className="rounded-md border border-coral/30 px-4 py-2 font-bold text-coral transition hover:bg-coral hover:text-white disabled:border-ink/10 disabled:text-ink/30"
+        >
+          {schedulerLoading ? "מריץ..." : "הרץ Scheduler"}
         </button>
       </div>
 
@@ -94,6 +119,15 @@ export function SyncDiagnostics() {
           <p className="mt-1 font-black">{reminderCount ?? "לא נבדק"}</p>
         </div>
       </div>
+
+      {schedulerResult ? (
+        <div className="mt-4 rounded-md border border-saffron/30 bg-saffron/10 p-3">
+          <p className="font-black text-ink">תוצאת Scheduler</p>
+          <p className="mt-1 text-sm font-semibold text-ink/70">
+            נשלחו: {schedulerResult.sent} · נכשלו: {schedulerResult.failed} · שוחזרו: {schedulerResult.recovered} · זמן: {schedulerResult.durationMs}ms
+          </p>
+        </div>
+      ) : null}
 
       {sync ? (
         <div className="mt-4 rounded-md border border-mint/20 bg-mint/5 p-3">

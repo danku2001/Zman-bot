@@ -130,6 +130,8 @@ Vercel Hobby לא מתאים ל-cron כל דקה, לכן משתמשים ב-cron-
 https://YOUR_VERCEL_DOMAIN/api/scheduler/run?secret=CRON_SECRET
 ```
 
+ה-endpoint מקבל גם `?cron_secret=CRON_SECRET`, `?token=CRON_SECRET`, header בשם `x-cron-secret`, או `Authorization: Bearer CRON_SECRET`.
+
 6. Timeout: פחות מ-30 שניות.
 7. שמרו והפעילו.
 
