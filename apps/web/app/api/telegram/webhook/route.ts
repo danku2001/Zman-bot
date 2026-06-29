@@ -12,5 +12,10 @@ export async function POST(req: NextRequest) {
   }
   const update = await req.json().catch(() => null) as TelegramUpdate | null;
   if (!update || typeof update.update_id !== "number") return json({ error: "Invalid Telegram update" }, 400);
-  return json(await handleTelegramWebhookUpdate(update));
+  try {
+    return json(await handleTelegramWebhookUpdate(update));
+  } catch (error) {
+    console.error("Telegram webhook processing failed", error instanceof Error ? error.message : "Unknown error");
+    return json({ ok: true, processed: false });
+  }
 }

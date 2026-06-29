@@ -165,11 +165,13 @@ const FOLLOWUP_INTERVAL_MS = 5 * 60_000;
 export const MAX_FOLLOWUPS = Number(process.env.MAX_FOLLOWUPS ?? 12);
 
 function localIso(date = new Date()): string {
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+  const safeDate = Number.isFinite(date.getTime()) ? date : new Date();
+  return new Date(safeDate.getTime() - safeDate.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
 }
 
 function nextFollowupIso(date = new Date()): string {
-  return localIso(new Date(date.getTime() + FOLLOWUP_INTERVAL_MS));
+  const safeDate = Number.isFinite(date.getTime()) ? date : new Date();
+  return localIso(new Date(safeDate.getTime() + FOLLOWUP_INTERVAL_MS));
 }
 
 function addEvent(reminderId: number | null, chatId: string, eventType: string, payload?: unknown): void {

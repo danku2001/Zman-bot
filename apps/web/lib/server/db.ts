@@ -45,8 +45,9 @@ function sql(): Sql {
 
 function toIso(value: unknown): string | null {
   if (!value) return null;
-  if (value instanceof Date) return value.toISOString().slice(0, 19);
-  return String(value).replace(" ", "T").replace(/\.\d{3}Z?$/, "").slice(0, 19);
+  const candidate = value instanceof Date ? value : new Date(String(value));
+  if (!Number.isFinite(candidate.getTime())) return null;
+  return candidate.toISOString().slice(0, 19);
 }
 
 function parseDays(value: ReminderRow["recurrence_days_of_week"]): number[] | null {
@@ -267,11 +268,13 @@ export async function getRange(chatId: string, startIso: string, endIso: string)
 }
 
 function localIso(date = new Date()): string {
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+  const safeDate = Number.isFinite(date.getTime()) ? date : new Date();
+  return new Date(safeDate.getTime() - safeDate.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
 }
 
 function nextFollowupIso(date = new Date()): string {
-  return localIso(new Date(date.getTime() + FOLLOWUP_INTERVAL_MS));
+  const safeDate = Number.isFinite(date.getTime()) ? date : new Date();
+  return localIso(new Date(safeDate.getTime() + FOLLOWUP_INTERVAL_MS));
 }
 
 function rangeForDay(now: Date, offset: number): { startIso: string; endIso: string } {

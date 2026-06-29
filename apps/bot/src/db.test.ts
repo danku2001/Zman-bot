@@ -54,6 +54,7 @@ test("one-time reminder becomes notified after send", () => {
   assert.equal(updated?.sendingAt, null);
   assert.ok(updated?.sentAt);
   assert.ok(updated?.nextFollowupAt);
+  assert.equal(Number.isNaN(Date.parse(updated?.nextFollowupAt ?? "")), false);
   assert.equal(updated?.followupCount, 0);
 });
 
@@ -95,6 +96,7 @@ test("not now defers notified reminder follow-up by five minutes", () => {
   const updated = getReminderById(reminder.id);
   assert.equal(updated?.status, "notified");
   assert.ok(updated?.nextFollowupAt);
+  assert.equal(Number.isNaN(Date.parse(updated?.nextFollowupAt ?? "")), false);
   assert.equal(getReminderEventsByChatId("test-chat").some((event) => event.eventType === "followup_skipped" && event.reminderId === reminder.id), true);
 });
 

@@ -4,12 +4,15 @@ import type { Reminder } from "../lib/types";
 
 const dayNames = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
 
-function formatDate(value: string): string {
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "תאריך לא זמין";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "תאריך לא זמין";
   return new Intl.DateTimeFormat("he-IL", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Asia/Jerusalem"
-  }).format(new Date(value));
+  }).format(date);
 }
 
 function statusLabel(status: Reminder["status"]): string {

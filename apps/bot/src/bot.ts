@@ -34,16 +34,22 @@ function replyFor(ctx: Context): ReplyFn {
   return (text, extra) => ctx.reply(text, extra);
 }
 
-function formatDate(value: string): string {
+function formatDate(value: string | null | undefined): string {
+  if (!value) return "תאריך לא זמין";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "תאריך לא זמין";
   return new Intl.DateTimeFormat("he-IL", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: config.timezone
-  }).format(new Date(value));
+  }).format(date);
 }
 
-function formatTime(value: string): string {
-  return new Intl.DateTimeFormat("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: config.timezone }).format(new Date(value));
+function formatTime(value: string | null | undefined): string {
+  if (!value) return "שעה לא זמינה";
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "שעה לא זמינה";
+  return new Intl.DateTimeFormat("he-IL", { hour: "2-digit", minute: "2-digit", timeZone: config.timezone }).format(date);
 }
 
 function priorityLabel(reminder: Reminder): string {
@@ -147,7 +153,8 @@ function groupByDay(reminders: Reminder[]): Map<string, Reminder[]> {
   const formatter = new Intl.DateTimeFormat("he-IL", { weekday: "long", day: "numeric", month: "numeric", timeZone: config.timezone });
   const groups = new Map<string, Reminder[]>();
   for (const reminder of reminders) {
-    const key = formatter.format(new Date(reminder.dueAt));
+    const date = new Date(reminder.dueAt);
+    const key = Number.isFinite(date.getTime()) ? formatter.format(date) : "ללא תאריך תקין";
     groups.set(key, [...(groups.get(key) ?? []), reminder]);
   }
   return groups;

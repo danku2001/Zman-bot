@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { handleTelegramWebhookUpdate } from "./webhook";
+import { POST } from "../../app/api/telegram/webhook/route";
 import type { TelegramUpdate } from "./telegram";
 
 test("same update_id is processed only once", async () => {
@@ -83,4 +84,18 @@ test("duplicate webhook call does not ask follow-up questions again", async () =
   });
 
   assert.equal(replies, 1);
+});
+
+test("Telegram webhook route returns 200, not 500, when processing throws", async () => {
+  const req = new Request("https://example.test/api/telegram/webhook", {
+    method: "POST",
+    body: JSON.stringify({
+      update_id: 999,
+      message: { message_id: 1, chat: { id: "chat-1" }, text: "/start" }
+    })
+  });
+
+  const response = await POST(req as Parameters<typeof POST>[0]);
+
+  assert.equal(response.status, 200);
 });
