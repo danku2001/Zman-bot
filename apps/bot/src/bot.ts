@@ -75,6 +75,18 @@ function statusLabel(reminder: Reminder): string {
   return "בוטלה";
 }
 
+function isActiveReminder(reminder: Reminder): boolean {
+  return reminder.status === "pending" || reminder.status === "sending" || reminder.status === "notified";
+}
+
+function activeReminders(reminders: Reminder[]): Reminder[] {
+  return reminders.filter(isActiveReminder);
+}
+
+function doneReminders(reminders: Reminder[]): Reminder[] {
+  return reminders.filter((reminder) => reminder.status === "done");
+}
+
 function formatReminder(reminder: Reminder, index?: number): string {
   const prefix = typeof index === "number" ? `${index + 1}. ` : "";
   return `${prefix}#${reminder.id} ${formatDate(reminder.dueAt)} - ${reminder.task} · ${reminder.category}${priorityLabel(reminder)}${recurrenceLabel(reminder)} · ${statusLabel(reminder)}`;
@@ -100,7 +112,8 @@ function reminderKeyboard(reminders: Reminder[]) {
       Markup.button.callback("השבוע", "view:week"),
       Markup.button.callback("קבועות", "view:recurring"),
       Markup.button.callback("באיחור", "view:overdue"),
-      Markup.button.callback("הכל", "view:list")
+      Markup.button.callback("פתוחות", "view:list"),
+      Markup.button.callback("בוצעו", "view:done")
     ]
   ]);
 }
@@ -161,7 +174,7 @@ function groupByDay(reminders: Reminder[]): Map<string, Reminder[]> {
 }
 
 function dailyDigest(chatId: string): { text: string; reminders: Reminder[] } {
-  const today = getTodayRemindersByChatId(chatId).filter((reminder) => reminder.status !== "cancelled");
+  const today = activeReminders(getTodayRemindersByChatId(chatId));
   const overdue = getOverdueRemindersByChatId(chatId);
   const completed = getCompletedTodayRemindersByChatId(chatId);
   const todayLines = today.length ? today.map((reminder, index) => `${index + 1}. ${formatTime(reminder.dueAt)} - ${reminder.task} (${reminder.category})${priorityLabel(reminder)}`).join("\n") : "אין תזכורות להיום.";
@@ -174,7 +187,7 @@ function dailyDigest(chatId: string): { text: string; reminders: Reminder[] } {
 }
 
 function weeklyDigest(chatId: string): { text: string; reminders: Reminder[] } {
-  const week = getWeekRemindersByChatId(chatId).filter((reminder) => reminder.status !== "cancelled");
+  const week = activeReminders(getWeekRemindersByChatId(chatId));
   const recurring = getRecurringRemindersByChatId(chatId).filter((reminder) => reminder.status === "pending");
   const groups = groupByDay(week);
   const sections = Array.from(groups.entries()).map(([day, reminders]) => `${day}:\n${reminders.map((reminder) => `* ${formatTime(reminder.dueAt)} - ${reminder.task}`).join("\n")}`);
@@ -186,13 +199,22 @@ function weeklyDigest(chatId: string): { text: string; reminders: Reminder[] } {
 }
 
 async function sendReminderList(chatId: string, reply: ReplyFn, title: string, reminders: Reminder[]) {
-  if (!reminders.length) {
+  const visible = activeReminders(reminders);
+  if (!visible.length) {
     await reply(`${title}\nאין תזכורות להצגה.`);
     return;
   }
-  const open = reminders.filter((reminder) => reminder.status === "pending" || reminder.status === "sending" || reminder.status === "notified");
-  const lines = reminders.slice(0, 12).map(formatReminder).join("\n");
-  await reply(`${title}\nיש לך ${open.length} תזכורות פתוחות:\n\n${lines}\n\nאפשר לבטל לפי מספר או טקסט. למשל: בטל את #2`, reminderKeyboard(reminders));
+  const lines = visible.slice(0, 12).map(formatReminder).join("\n");
+  await reply(`${title}\nיש לך ${visible.length} תזכורות פתוחות:\n\n${lines}\n\nאפשר לבטל לפי מספר או טקסט. למשל: בטל את #2`, reminderKeyboard(visible));
+}
+
+async function sendDoneReminderList(chatId: string, reply: ReplyFn, title = "משימות שכבר ביצעת:") {
+  const reminders = doneReminders(getRemindersByChatId(chatId));
+  if (!reminders.length) {
+    await reply(`${title}\nאין משימות שבוצעו להצגה.`);
+    return;
+  }
+  await reply(`${title}\n${reminders.slice(0, 12).map(formatReminder).join("\n")}`, reminderKeyboard(reminders));
 }
 
 async function handleTargetAction(
@@ -259,7 +281,7 @@ function helpText(): string {
     "מה יש לי השבוע?",
     "בטל את התזכורת להתקשר לאמא",
     "",
-    "פקודות: /id, /morning, /list, /today, /week, /week_summary, /recurring, /overdue, /search <טקסט>, /done <id>, /delete <id>, /snooze <id> <זמן>, /stats"
+    "פקודות: /id, /morning, /list, /today, /week, /completed, /week_summary, /recurring, /overdue, /search <טקסט>, /done <id>, /delete <id>, /snooze <id> <זמן>, /stats"
   ].join("\n");
 }
 
@@ -275,6 +297,8 @@ bot.command("morning", (ctx) => {
 });
 bot.command("tomorrow", (ctx) => void sendReminderList(String(ctx.chat.id), replyFor(ctx), "מה יש לך מחר:", getTomorrowRemindersByChatId(String(ctx.chat.id))));
 bot.command("week", (ctx) => void sendReminderList(String(ctx.chat.id), replyFor(ctx), "מה יש לך השבוע:", getWeekRemindersByChatId(String(ctx.chat.id))));
+bot.command("completed", (ctx) => void sendDoneReminderList(String(ctx.chat.id), replyFor(ctx)));
+bot.command("done_list", (ctx) => void sendDoneReminderList(String(ctx.chat.id), replyFor(ctx)));
 bot.command("week_summary", (ctx) => {
   const digest = weeklyDigest(String(ctx.chat.id));
   void ctx.reply(digest.text, reminderKeyboard(digest.reminders));
@@ -337,9 +361,14 @@ bot.command("clear_done", (ctx) => {
   void ctx.reply("למחוק את כל התזכורות שבוצעו?", Markup.inlineKeyboard([[Markup.button.callback("כן, בטל", "confirm_bulk:yes"), Markup.button.callback("לא", "confirm_bulk:no")]]));
 });
 
-bot.action(/^view:(list|today|week|recurring|overdue)$/, async (ctx) => {
+bot.action(/^view:(list|today|week|recurring|overdue|done)$/, async (ctx) => {
   const chatId = String(ctx.chat?.id);
   const view = ctx.match[1] as BotIntent;
+  if (view === "done") {
+    await ctx.answerCbQuery();
+    await sendDoneReminderList(chatId, replyFor(ctx));
+    return;
+  }
   const reminders =
     view === "today"
       ? getTodayRemindersByChatId(chatId)
@@ -431,6 +460,7 @@ bot.action(/^confirm_bulk:(yes|no)$/, async (ctx) => {
 bot.on("text", (ctx) => {
   try {
     const chatId = String(ctx.chat.id);
+    const text = ctx.message.text;
     const pendingTask = pendingQuickCapture.get(chatId);
     if (pendingTask) {
       const parsedTime = parseReminderMessage(`תזכיר לי ${ctx.message.text} ${pendingTask.task}`);
@@ -446,7 +476,11 @@ bot.on("text", (ctx) => {
         return void ctx.reply(`סגור ✅\nשמתי לך תזכורת ל-${formatDate(reminder.dueAt)}:\n${reminder.task}`, afterCreateKeyboard(reminder.id));
       }
     }
-    const parsed = parseUserMessage(ctx.message.text);
+    if (/(?:מה|הצג|תראה).*(?:ביצעתי|בוצעו|הושלמו)|משימות\s+ש(?:כבר\s+)?ביצעתי/u.test(text)) {
+      return void sendDoneReminderList(chatId, replyFor(ctx));
+    }
+
+    const parsed = parseUserMessage(text);
 
     if (parsed.intent === "help") return void ctx.reply(helpText());
     if (parsed.intent === "morning") {
