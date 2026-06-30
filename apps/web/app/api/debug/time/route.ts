@@ -1,6 +1,6 @@
 import { json } from "../../../../lib/server/api";
 import { getDatabaseNowUtc } from "../../../../lib/server/db";
-import { APP_TIME_ZONE, formatUtcIsoForIsrael, israelWallClockPartsToUtcIso, nowUtcIso } from "../../../../lib/server/time";
+import { APP_TIME_ZONE, formatUtcIsoForIsrael, israelWallClockPartsToUtcIso, normalizeDatabaseTimestampToUtcIso, nowUtcIso } from "../../../../lib/server/time";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -8,6 +8,7 @@ export const dynamic = "force-dynamic";
 export async function GET() {
   const serverNowUtc = nowUtcIso();
   const sampleUtc = israelWallClockPartsToUtcIso(2026, 6, 30, 18, 0);
+  const databaseTimestampSample = normalizeDatabaseTimestampToUtcIso("2026-06-30 15:00:00");
   const databaseNow = await getDatabaseNowUtc().catch((error) => `unavailable: ${error instanceof Error ? error.message : "unknown error"}`);
 
   return json({
@@ -20,6 +21,11 @@ export async function GET() {
       israelInput: "2026-06-30 18:00",
       utcStored: sampleUtc,
       israelDisplayed: formatUtcIsoForIsrael(sampleUtc)
+    },
+    databaseTimestampWithoutTimezoneSample: {
+      databaseInput: "2026-06-30 15:00:00",
+      parsedAsUtc: databaseTimestampSample,
+      israelDisplayed: formatUtcIsoForIsrael(databaseTimestampSample)
     },
     envPresence: {
       hasDatabaseUrl: Boolean(process.env.DATABASE_URL),
