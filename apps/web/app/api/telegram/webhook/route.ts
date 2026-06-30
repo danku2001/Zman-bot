@@ -16,6 +16,6 @@ export async function POST(req: NextRequest) {
     return json(await handleTelegramWebhookUpdate(update));
   } catch (error) {
     console.error("Telegram webhook processing failed", error instanceof Error ? error.message : "Unknown error");
-    return json({ ok: true, processed: false });
+    return json({ ok: false, processed: false, retry: true }, 500);
   }
 }

@@ -18,6 +18,7 @@ test("same update_id is processed only once", async () => {
       seen.add(updateId);
       return true;
     },
+    markProcessed: async () => {},
     processUpdate: async () => {
       processed += 1;
     }
@@ -28,6 +29,7 @@ test("same update_id is processed only once", async () => {
       seen.add(updateId);
       return true;
     },
+    markProcessed: async () => {},
     processUpdate: async () => {
       processed += 1;
     }
@@ -47,6 +49,7 @@ test("duplicate webhook call returns ok and does not create duplicate reminders"
 
   await handleTelegramWebhookUpdate(update, {
     claimUpdate: async () => true,
+    markProcessed: async () => {},
     processUpdate: async () => {
       createdReminders += 1;
     }
@@ -72,6 +75,7 @@ test("duplicate webhook call does not ask follow-up questions again", async () =
 
   await handleTelegramWebhookUpdate(update, {
     claimUpdate: async () => true,
+    markProcessed: async () => {},
     processUpdate: async () => {
       replies += 1;
     }
@@ -86,7 +90,30 @@ test("duplicate webhook call does not ask follow-up questions again", async () =
   assert.equal(replies, 1);
 });
 
-test("Telegram webhook route returns 200, not 500, when processing throws", async () => {
+test("failed processing marks update failed and rethrows for Telegram retry", async () => {
+  let failedUpdate = "";
+  let failedError = "";
+  const update: TelegramUpdate = {
+    update_id: 999,
+    message: { message_id: 1, chat: { id: "chat-1" }, text: "/start" }
+  };
+
+  await assert.rejects(() => handleTelegramWebhookUpdate(update, {
+    claimUpdate: async () => true,
+    markFailed: async (updateId, error) => {
+      failedUpdate = updateId;
+      failedError = error;
+    },
+    processUpdate: async () => {
+      throw new Error("telegram temporary failure");
+    }
+  }), /telegram temporary failure/u);
+
+  assert.equal(failedUpdate, "999");
+  assert.equal(failedError, "telegram temporary failure");
+});
+
+test("Telegram webhook route returns 500 when processing throws so Telegram retries", async () => {
   const req = new Request("https://example.test/api/telegram/webhook", {
     method: "POST",
     body: JSON.stringify({
@@ -97,5 +124,5 @@ test("Telegram webhook route returns 200, not 500, when processing throws", asyn
 
   const response = await POST(req as Parameters<typeof POST>[0]);
 
-  assert.equal(response.status, 200);
+  assert.equal(response.status, 500);
 });

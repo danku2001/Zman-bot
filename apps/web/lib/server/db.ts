@@ -163,25 +163,63 @@ export async function migrate(): Promise<void> {
     CREATE TABLE IF NOT EXISTS processed_updates (
       update_id TEXT PRIMARY KEY,
       chat_id TEXT NULL,
-      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status TEXT NOT NULL DEFAULT 'processed',
+      processing_started_at TIMESTAMPTZ NULL,
+      processed_at TIMESTAMPTZ NULL,
+      last_error TEXT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0
     )
   `;
+  await db`ALTER TABLE processed_updates ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'processed'`;
+  await db`ALTER TABLE processed_updates ADD COLUMN IF NOT EXISTS processing_started_at TIMESTAMPTZ NULL`;
+  await db`ALTER TABLE processed_updates ADD COLUMN IF NOT EXISTS processed_at TIMESTAMPTZ NULL`;
+  await db`ALTER TABLE processed_updates ADD COLUMN IF NOT EXISTS last_error TEXT NULL`;
+  await db`ALTER TABLE processed_updates ADD COLUMN IF NOT EXISTS attempts INTEGER NOT NULL DEFAULT 0`;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_due ON reminders(status, due_at)`;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_followup ON reminders(status, next_followup_at)`;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_chat ON reminders(chat_id, created_at)`;
   await db`CREATE INDEX IF NOT EXISTS idx_reminders_normalized ON reminders(chat_id, normalized_task)`;
+  await db`CREATE INDEX IF NOT EXISTS idx_processed_updates_status ON processed_updates(status, processing_started_at)`;
   migrated = true;
 }
 
-export async function claimProcessedUpdate(updateId: string, chatId?: string | null): Promise<boolean> {
+export async function claimTelegramUpdate(updateId: string, chatId?: string | null): Promise<boolean> {
   await migrate();
   const rows = await sql()`
-    INSERT INTO processed_updates (update_id, chat_id)
-    VALUES (${updateId}, ${chatId ?? null})
-    ON CONFLICT (update_id) DO NOTHING
+    INSERT INTO processed_updates (update_id, chat_id, status, processing_started_at, attempts)
+    VALUES (${updateId}, ${chatId ?? null}, 'processing', NOW(), 1)
+    ON CONFLICT (update_id) DO UPDATE
+      SET status = 'processing',
+          chat_id = COALESCE(EXCLUDED.chat_id, processed_updates.chat_id),
+          processing_started_at = NOW(),
+          attempts = processed_updates.attempts + 1,
+          last_error = NULL
+      WHERE processed_updates.status = 'failed'
+         OR (processed_updates.status = 'processing' AND processed_updates.processing_started_at < NOW() - INTERVAL '2 minutes')
     RETURNING update_id
   ` as Array<{ update_id: string }>;
   return rows.length > 0;
+}
+
+export const claimProcessedUpdate = claimTelegramUpdate;
+
+export async function markTelegramUpdateProcessed(updateId: string): Promise<void> {
+  await migrate();
+  await sql()`
+    UPDATE processed_updates
+    SET status = 'processed', processed_at = NOW(), last_error = NULL
+    WHERE update_id = ${updateId}
+  `;
+}
+
+export async function markTelegramUpdateFailed(updateId: string, error: string): Promise<void> {
+  await migrate();
+  await sql()`
+    UPDATE processed_updates
+    SET status = 'failed', last_error = ${error.slice(0, 500)}
+    WHERE update_id = ${updateId}
+  `;
 }
 
 async function addEvent(reminderId: number | null, chatId: string, eventType: string, payload?: unknown): Promise<void> {

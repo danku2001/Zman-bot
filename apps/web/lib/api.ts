@@ -99,6 +99,20 @@ export function runScheduler(limit = 3): Promise<{ ok: boolean; sent: number; re
   });
 }
 
+export function getTelegramStatus(): Promise<{
+  telegram: {
+    ok: boolean;
+    url: string;
+    pendingUpdateCount: number;
+    lastErrorDate?: number;
+    lastErrorMessage?: string;
+    maxConnections?: number;
+    allowedUpdates?: string[];
+  };
+}> {
+  return request("/api/telegram/status");
+}
+
 export function parseReminder(chatId: string, message: string): Promise<{ result: unknown }> {
   return request("/api/reminders/parse", {
     method: "POST",

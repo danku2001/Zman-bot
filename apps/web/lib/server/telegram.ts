@@ -37,6 +37,42 @@ export async function sendMessage(chatId: string, text: string, replyMarkup?: un
   await telegram("sendMessage", { chat_id: chatId, text, reply_markup: replyMarkup });
 }
 
+export async function getTelegramWebhookInfo(): Promise<{
+  ok: boolean;
+  url: string;
+  hasCustomCertificate: boolean;
+  pendingUpdateCount: number;
+  lastErrorDate?: number;
+  lastErrorMessage?: string;
+  maxConnections?: number;
+  allowedUpdates?: string[];
+}> {
+  const response = await fetch(`https://api.telegram.org/bot${token()}/getWebhookInfo`, { cache: "no-store" });
+  const data = await response.json().catch(() => ({})) as {
+    ok?: boolean;
+    result?: {
+      url?: string;
+      has_custom_certificate?: boolean;
+      pending_update_count?: number;
+      last_error_date?: number;
+      last_error_message?: string;
+      max_connections?: number;
+      allowed_updates?: string[];
+    };
+  };
+  if (!response.ok || !data.ok || !data.result) throw new Error(`Telegram getWebhookInfo failed with ${response.status}`);
+  return {
+    ok: true,
+    url: data.result.url ?? "",
+    hasCustomCertificate: Boolean(data.result.has_custom_certificate),
+    pendingUpdateCount: data.result.pending_update_count ?? 0,
+    lastErrorDate: data.result.last_error_date,
+    lastErrorMessage: data.result.last_error_message,
+    maxConnections: data.result.max_connections,
+    allowedUpdates: data.result.allowed_updates
+  };
+}
+
 async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
   await telegram("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
 }

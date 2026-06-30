@@ -1,8 +1,10 @@
-import { claimProcessedUpdate } from "./db";
+import { claimTelegramUpdate, markTelegramUpdateFailed, markTelegramUpdateProcessed } from "./db";
 import { processTelegramUpdate, type TelegramUpdate } from "./telegram";
 
 export type WebhookDeps = {
   claimUpdate?: (updateId: string, chatId?: string | null) => Promise<boolean>;
+  markProcessed?: (updateId: string) => Promise<void>;
+  markFailed?: (updateId: string, error: string) => Promise<void>;
   processUpdate?: (update: TelegramUpdate) => Promise<void>;
 };
 
@@ -12,11 +14,19 @@ function chatIdFromUpdate(update: TelegramUpdate): string | null {
 }
 
 export async function handleTelegramWebhookUpdate(update: TelegramUpdate, deps: WebhookDeps = {}): Promise<{ ok: true; duplicate: boolean }> {
-  const claimUpdate = deps.claimUpdate ?? claimProcessedUpdate;
+  const claimUpdate = deps.claimUpdate ?? claimTelegramUpdate;
+  const markProcessed = deps.markProcessed ?? markTelegramUpdateProcessed;
+  const markFailed = deps.markFailed ?? markTelegramUpdateFailed;
   const processUpdate = deps.processUpdate ?? processTelegramUpdate;
   const updateId = String(update.update_id);
   const claimed = await claimUpdate(updateId, chatIdFromUpdate(update));
   if (!claimed) return { ok: true, duplicate: true };
-  await processUpdate(update);
+  try {
+    await processUpdate(update);
+    await markProcessed(updateId);
+  } catch (error) {
+    await markFailed(updateId, error instanceof Error ? error.message : "Unknown webhook error");
+    throw error;
+  }
   return { ok: true, duplicate: false };
 }

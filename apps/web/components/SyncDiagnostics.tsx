@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getApiBaseError, getApiBaseLabel, getHealth, getReminders, getSyncDebug, runScheduler } from "../lib/api";
+import { getApiBaseError, getApiBaseLabel, getHealth, getReminders, getSyncDebug, getTelegramStatus, runScheduler } from "../lib/api";
 import type { Reminder } from "../lib/types";
 import { ChatIdField, getStoredChatId } from "./ChatIdField";
 
 type HealthResult = Awaited<ReturnType<typeof getHealth>>;
 type SyncResult = Awaited<ReturnType<typeof getSyncDebug>>;
 type SchedulerResult = Awaited<ReturnType<typeof runScheduler>>;
+type TelegramStatusResult = Awaited<ReturnType<typeof getTelegramStatus>>;
 
 function latestFive(reminders: Reminder[]): Reminder[] {
   return reminders
@@ -23,6 +24,7 @@ export function SyncDiagnostics() {
   const [reminderCount, setReminderCount] = useState<number | null>(null);
   const [latest, setLatest] = useState<Reminder[]>([]);
   const [schedulerResult, setSchedulerResult] = useState<SchedulerResult | null>(null);
+  const [telegramStatus, setTelegramStatus] = useState<TelegramStatusResult["telegram"] | null>(null);
   const [loading, setLoading] = useState(false);
   const [schedulerLoading, setSchedulerLoading] = useState(false);
   const [error, setError] = useState("");
@@ -38,18 +40,21 @@ export function SyncDiagnostics() {
     setSync(null);
     setReminderCount(null);
     setLatest([]);
+    setTelegramStatus(null);
     try {
       if (apiBaseError) throw new Error(apiBaseError);
       const healthResult = await getHealth();
       setHealth(healthResult);
       if (!nextChatId) throw new Error("חסר Chat ID. שלחו /id בטלגרם והזינו כאן את המספר.");
-      const [syncResult, remindersResult] = await Promise.all([
+      const [syncResult, remindersResult, telegramResult] = await Promise.all([
         getSyncDebug(nextChatId),
-        getReminders(nextChatId)
+        getReminders(nextChatId),
+        getTelegramStatus()
       ]);
       setSync(syncResult);
       setReminderCount(remindersResult.reminders.length);
       setLatest(latestFive(remindersResult.reminders));
+      setTelegramStatus(telegramResult.telegram);
     } catch (err) {
       setError(err instanceof Error ? err.message : "בדיקת הסנכרון נכשלה");
     } finally {
@@ -119,6 +124,17 @@ export function SyncDiagnostics() {
           <p className="mt-1 font-black">{reminderCount ?? "לא נבדק"}</p>
         </div>
       </div>
+
+      {telegramStatus ? (
+        <div className="mt-4 rounded-md border border-ink/10 bg-ink/[0.03] p-3">
+          <p className="font-black text-ink">Telegram Webhook</p>
+          <p className="mt-1 text-sm font-semibold text-ink/70" dir="ltr">{telegramStatus.url}</p>
+          <p className="mt-2 text-sm text-ink/70">
+            Pending updates: {telegramStatus.pendingUpdateCount}
+            {telegramStatus.lastErrorMessage ? ` · Last error: ${telegramStatus.lastErrorMessage}` : ""}
+          </p>
+        </div>
+      ) : null}
 
       {schedulerResult ? (
         <div className="mt-4 rounded-md border border-saffron/30 bg-saffron/10 p-3">
