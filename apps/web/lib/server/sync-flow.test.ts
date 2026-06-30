@@ -129,3 +129,43 @@ test("scheduler treats Telegram ok:false as a failed send", async () => {
     delete process.env.ZMANBOT_TEST_DB;
   }
 });
+
+test("scheduler sends due reminders, skips future reminders, and prevents duplicate sends", async () => {
+  process.env.ZMANBOT_TEST_DB = "memory";
+  process.env.API_SECRET = "test-api-secret";
+  process.env.TELEGRAM_BOT_TOKEN = "test-telegram-token";
+  resetMemoryDb();
+
+  const previousFetch = global.fetch;
+  const telegramMessages: Array<{ chat_id: string; text: string }> = [];
+  global.fetch = (async (_url, init) => {
+    telegramMessages.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ ok: true, result: { message_id: telegramMessages.length } }), { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    await handleCreate(apiRequest("/api/reminders", {
+      chat_id: chatId,
+      task: "תזכורת שעברה",
+      due_at: "2026-06-30T00:00:00"
+    }));
+    await handleCreate(apiRequest("/api/reminders", {
+      chat_id: chatId,
+      task: "תזכורת עתידית",
+      due_at: "2999-06-30T00:00:00"
+    }));
+
+    const firstRun = await runSchedulerOnce(10);
+    const secondRun = await runSchedulerOnce(10);
+
+    assert.equal(firstRun.dueCountBefore, 1);
+    assert.equal(firstRun.sent, 1);
+    assert.equal(firstRun.failed, 0);
+    assert.equal(secondRun.sent, 0);
+    assert.equal(telegramMessages.filter((message) => message.text.includes("תזכורת שעברה")).length, 1);
+    assert.equal(telegramMessages.some((message) => message.text.includes("תזכורת עתידית")), false);
+  } finally {
+    global.fetch = previousFetch;
+    delete process.env.ZMANBOT_TEST_DB;
+  }
+});

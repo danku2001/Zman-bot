@@ -165,6 +165,19 @@ function statusLabel(reminder: Reminder): string {
   return "בוטלה";
 }
 
+function isSubMinuteReminder(dueAt: string): boolean {
+  const due = new Date(dueAt).getTime();
+  return Number.isFinite(due) && due - Date.now() > 0 && due - Date.now() < 60_000;
+}
+
+function createdReminderText(reminder: Reminder): string {
+  const type = reminder.recurrenceType ? "תזכורת קבועה" : "תזכורת חד-פעמית";
+  const secondsNote = isSubMinuteReminder(reminder.dueAt)
+    ? "\n\nשמתי לב שביקשת תזכורת בשניות. בפריסה הנוכחית התזכורת תישלח בריצת הסנכרון הקרובה, בדרך כלל עד דקה."
+    : "";
+  return `קבעתי ✅\nמשימה: ${reminder.task}\nזמן ישראל: ${safeFormatDate(reminder.dueAt)}\nסוג: ${type}${secondsNote}`;
+}
+
 export function formatReminderForTelegram(reminder: Reminder, index: number): string {
   return `${index + 1}. #${reminder.id} ${safeFormatDate(reminder.dueAt)} - ${reminder.task} · ${statusLabel(reminder)}`;
 }
@@ -262,7 +275,7 @@ async function handleText(chatId: string, text: string): Promise<void> {
   const parsed = parseUserMessage(text);
   if (parsed.intent === "create" && parsed.task && parsed.dueAt) {
     const reminder = await createReminder(chatId, { task: parsed.task, dueAt: parsed.dueAt, recurrence: parsed.recurrence ?? null, category: parsed.category, priority: parsed.priority, sourceText: text });
-    await sendBestEffort(chatId, `קבעתי ✅\n${safeFormatDate(reminder.dueAt)}\n${reminder.task}`);
+    await sendBestEffort(chatId, createdReminderText(reminder));
     return;
   }
   if (parsed.intent === "list") return sendList(chatId, "כל התזכורות שלך:", await getRemindersByChatId(chatId));

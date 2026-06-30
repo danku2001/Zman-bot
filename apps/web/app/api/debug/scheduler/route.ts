@@ -30,6 +30,9 @@ export async function GET(req: NextRequest) {
     pendingDueCount: snapshot.pendingDueCount,
     nextPendingReminder: snapshot.nextPendingReminder,
     lastSchedulerEvents: snapshot.lastSchedulerEvents,
+    cronResolution: "one-minute external scheduler tick",
+    supportsSecondLevelDelivery: false,
+    deliveryAccuracyNote: "Vercel serverless + cron-job.org cannot guarantee exact second-level delivery. Due reminders are sent on the next scheduler run, usually within the next minute when cron-job.org is active.",
     canSendTelegram,
     telegramStatus
   });

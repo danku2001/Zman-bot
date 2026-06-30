@@ -101,6 +101,7 @@ export function runScheduler(limit = 3): Promise<{
   durationMs: number;
   checkedAtUtc?: string;
   checkedAtIsrael?: string;
+  dueCountBefore?: number;
   claimedIds?: number[];
   failureReasons?: string[];
 }> {
@@ -116,6 +117,9 @@ export function getSchedulerDebug(): Promise<{
   pendingDueCount: number;
   nextPendingReminder: Pick<Reminder, "id" | "chatId" | "task" | "dueAt" | "status"> | null;
   lastSchedulerEvents: Array<Pick<ReminderEvent, "id" | "reminderId" | "chatId" | "eventType" | "createdAt">>;
+  cronResolution: string;
+  supportsSecondLevelDelivery: boolean;
+  deliveryAccuracyNote: string;
   canSendTelegram: boolean;
   telegramStatus: string;
 }> {

@@ -7,7 +7,8 @@ import {
   recoverStaleSendingReminders,
   releaseFollowupAfterSendFailure,
   releaseReminderAfterSendFailure,
-  rescheduleRecurringReminder
+  rescheduleRecurringReminder,
+  getSchedulerDebugSnapshot
 } from "./db";
 import { sendMessage } from "./telegram";
 import { ensureAppTimeZone, formatHebrewWallClock, nowUtcIso } from "./time";
@@ -37,12 +38,14 @@ export async function runSchedulerOnce(limit = 25): Promise<{
   durationMs: number;
   checkedAtUtc: string;
   checkedAtIsrael: string;
+  dueCountBefore: number;
   claimedIds: number[];
   failureReasons: string[];
 }> {
   const startedAt = Date.now();
   const checkedAtUtc = nowUtcIso();
   const checkedAtIsrael = formatHebrewWallClock(checkedAtUtc, checkedAtUtc, "medium");
+  const dueCountBefore = (await getSchedulerDebugSnapshot(checkedAtUtc)).pendingDueCount;
   const recovered = await recoverStaleSendingReminders();
   let sent = 0;
   let failed = 0;
@@ -91,5 +94,5 @@ export async function runSchedulerOnce(limit = 25): Promise<{
     }
   }
 
-  return { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt, checkedAtUtc, checkedAtIsrael, claimedIds, failureReasons };
+  return { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt, checkedAtUtc, checkedAtIsrael, dueCountBefore, claimedIds, failureReasons };
 }
