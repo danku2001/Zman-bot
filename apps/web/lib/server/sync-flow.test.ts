@@ -100,3 +100,32 @@ test("sync flow keeps Telegram, dashboard API, database, and scheduler in one so
     delete process.env.ZMANBOT_TEST_DB;
   }
 });
+
+test("scheduler treats Telegram ok:false as a failed send", async () => {
+  process.env.ZMANBOT_TEST_DB = "memory";
+  process.env.API_SECRET = "test-api-secret";
+  process.env.TELEGRAM_BOT_TOKEN = "test-telegram-token";
+  resetMemoryDb();
+
+  const previousFetch = global.fetch;
+  global.fetch = (async () => {
+    return new Response(JSON.stringify({ ok: false, description: "chat not found" }), { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    await handleCreate(apiRequest("/api/reminders", {
+      chat_id: chatId,
+      task: "בדיקת כשל שליחה",
+      due_at: "2026-06-30T00:00:00"
+    }));
+
+    const schedulerResult = await runSchedulerOnce(1);
+
+    assert.equal(schedulerResult.sent, 0);
+    assert.equal(schedulerResult.failed, 1);
+    assert.match(schedulerResult.failureReasons[0] ?? "", /chat not found/u);
+  } finally {
+    global.fetch = previousFetch;
+    delete process.env.ZMANBOT_TEST_DB;
+  }
+});

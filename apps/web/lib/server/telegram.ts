@@ -33,8 +33,8 @@ async function telegram(method: string, body: unknown): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  if (!response.ok) {
-    const data = await response.json().catch(() => ({})) as { description?: string };
+  const data = await response.json().catch(() => ({})) as { ok?: boolean; description?: string };
+  if (!response.ok || !data.ok) {
     const chatId = typeof body === "object" && body && "chat_id" in body ? String((body as { chat_id?: unknown }).chat_id) : "unknown";
     throw new Error(`Telegram ${method} failed with ${response.status}${data.description ? `: ${data.description}` : ""} (chat_id=${chatId})`);
   }
