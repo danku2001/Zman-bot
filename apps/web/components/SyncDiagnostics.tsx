@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getApiBaseError, getApiBaseLabel, getHealth, getReminders, getSyncDebug, getTelegramStatus, runScheduler } from "../lib/api";
+import { getApiBaseError, getApiBaseLabel, getHealth, getReminders, getSyncDebug, getTelegramStatus, repairTelegramWebhook, runScheduler } from "../lib/api";
 import type { Reminder } from "../lib/types";
 import { ChatIdField, getStoredChatId } from "./ChatIdField";
 
@@ -27,6 +27,7 @@ export function SyncDiagnostics() {
   const [telegramStatus, setTelegramStatus] = useState<TelegramStatusResult["telegram"] | null>(null);
   const [loading, setLoading] = useState(false);
   const [schedulerLoading, setSchedulerLoading] = useState(false);
+  const [webhookRepairing, setWebhookRepairing] = useState(false);
   const [error, setError] = useState("");
   const apiBaseLabel = useMemo(() => getApiBaseLabel(), []);
   const apiBaseError = useMemo(() => getApiBaseError(), []);
@@ -77,6 +78,21 @@ export function SyncDiagnostics() {
     }
   }
 
+  async function repairWebhook() {
+    setWebhookRepairing(true);
+    setError("");
+    try {
+      if (apiBaseError) throw new Error(apiBaseError);
+      await repairTelegramWebhook();
+      const telegramResult = await getTelegramStatus();
+      setTelegramStatus(telegramResult.telegram);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "תיקון webhook נכשל");
+    } finally {
+      setWebhookRepairing(false);
+    }
+  }
+
   return (
     <section className="mt-6 rounded-lg border border-ink/10 bg-white p-5 shadow-soft">
       <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
@@ -97,6 +113,13 @@ export function SyncDiagnostics() {
           className="rounded-md border border-coral/30 px-4 py-2 font-bold text-coral transition hover:bg-coral hover:text-white disabled:border-ink/10 disabled:text-ink/30"
         >
           {schedulerLoading ? "מריץ..." : "הרץ Scheduler"}
+        </button>
+        <button
+          onClick={() => void repairWebhook()}
+          disabled={webhookRepairing}
+          className="rounded-md border border-mint/30 px-4 py-2 font-bold text-ink transition hover:bg-mint hover:text-white disabled:border-ink/10 disabled:text-ink/30"
+        >
+          {webhookRepairing ? "מתקן..." : "תקן Telegram Webhook"}
         </button>
       </div>
 
@@ -128,7 +151,7 @@ export function SyncDiagnostics() {
       {telegramStatus ? (
         <div className="mt-4 rounded-md border border-ink/10 bg-ink/[0.03] p-3">
           <p className="font-black text-ink">Telegram Webhook</p>
-          <p className="mt-1 text-sm font-semibold text-ink/70" dir="ltr">{telegramStatus.url}</p>
+          <p className="mt-1 text-sm font-semibold text-ink/70" dir="ltr">{telegramStatus.url || "לא מוגדר"}</p>
           <p className="mt-2 text-sm text-ink/70">
             Pending updates: {telegramStatus.pendingUpdateCount}
             {telegramStatus.lastErrorMessage ? ` · Last error: ${telegramStatus.lastErrorMessage}` : ""}

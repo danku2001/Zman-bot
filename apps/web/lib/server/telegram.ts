@@ -73,6 +73,30 @@ export async function getTelegramWebhookInfo(): Promise<{
   };
 }
 
+export async function setTelegramWebhook(appUrl: string): Promise<{
+  ok: boolean;
+  url: string;
+  description?: string;
+}> {
+  const secretToken = process.env.TELEGRAM_WEBHOOK_SECRET;
+  if (!secretToken) throw new Error("TELEGRAM_WEBHOOK_SECRET is required");
+  const baseUrl = appUrl.replace(/\/$/, "");
+  const webhookUrl = `${baseUrl}/api/telegram/webhook`;
+  const response = await fetch(`https://api.telegram.org/bot${token()}/setWebhook`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      url: webhookUrl,
+      secret_token: secretToken,
+      allowed_updates: ["message", "callback_query"],
+      drop_pending_updates: false
+    })
+  });
+  const data = await response.json().catch(() => ({})) as { ok?: boolean; description?: string };
+  if (!response.ok || !data.ok) throw new Error(data.description ?? `Telegram setWebhook failed with ${response.status}`);
+  return { ok: true, url: webhookUrl, description: data.description };
+}
+
 async function answerCallbackQuery(callbackQueryId: string, text?: string): Promise<void> {
   await telegram("answerCallbackQuery", { callback_query_id: callbackQueryId, text });
 }

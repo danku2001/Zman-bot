@@ -113,6 +113,12 @@ export function getTelegramStatus(): Promise<{
   return request("/api/telegram/status");
 }
 
+export function repairTelegramWebhook(): Promise<{ telegram: { ok: boolean; url: string; description?: string } }> {
+  return request("/api/telegram/webhook/setup", {
+    method: "POST"
+  });
+}
+
 export function parseReminder(chatId: string, message: string): Promise<{ result: unknown }> {
   return request("/api/reminders/parse", {
     method: "POST",
