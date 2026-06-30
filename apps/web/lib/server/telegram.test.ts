@@ -62,3 +62,15 @@ test("invalid date in reminder formatting does not crash", () => {
   assert.match(text, /תאריך לא זמין/u);
   assert.equal(safeFormatDate("not-a-date"), "תאריך לא זמין");
 });
+
+test("invalid timezone does not crash reminder date formatting", () => {
+  const previousTz = process.env.TZ;
+  process.env.TZ = "bad-time-zone";
+
+  try {
+    assert.doesNotThrow(() => safeFormatDate("2026-06-29T10:00:00"));
+  } finally {
+    if (previousTz === undefined) delete process.env.TZ;
+    else process.env.TZ = previousTz;
+  }
+});
