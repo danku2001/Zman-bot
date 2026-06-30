@@ -21,10 +21,6 @@ import { ReminderCard } from "./ReminderCard";
 
 type ReminderListMode = "all" | "today" | "tomorrow" | "week" | "recurring" | "overdue" | "done" | "cancelled" | "search";
 
-function localIso(date: Date): string {
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
-}
-
 export function ReminderList({ mode }: { mode: ReminderListMode }) {
   const [chatId, setChatId] = useState("");
   const [reminders, setReminders] = useState<Reminder[]>([]);
@@ -94,7 +90,7 @@ export function ReminderList({ mode }: { mode: ReminderListMode }) {
   }
 
   async function handleSnooze(id: number, minutes: number) {
-    const dueAt = localIso(new Date(Date.now() + minutes * 60_000));
+    const dueAt = new Date(Date.now() + minutes * 60_000).toISOString();
     await snoozeReminder(chatId, id, dueAt);
     await load();
   }

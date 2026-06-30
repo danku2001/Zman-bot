@@ -1,5 +1,5 @@
 import type { ParsedUserMessage, ParseResult, ParsedReminder, ReminderPriority, Recurrence } from "./types";
-import { ensureAppTimeZone, formatWallClockIso, israelWallClockDate } from "./time";
+import { ensureAppTimeZone, wallClockDateToUtcIso, israelWallClockDate } from "./time";
 
 ensureAppTimeZone();
 
@@ -101,7 +101,7 @@ function pad(value: number): string {
 }
 
 function toIsoLocal(date: Date): string {
-  return formatWallClockIso(date);
+  return wallClockDateToUtcIso(date);
 }
 
 export function normalizeHebrewText(value: string): string {

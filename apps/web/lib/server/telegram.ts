@@ -13,7 +13,7 @@ import {
   snoozeReminder
 } from "./db";
 import { parseReminderMessage, parseUserMessage } from "./parser";
-import { ensureAppTimeZone, formatHebrewWallClock } from "./time";
+import { ensureAppTimeZone, formatHebrewWallClock, nowUtcIso, wallClockDateToUtcIso, israelWallClockDate } from "./time";
 import type { Reminder } from "../types";
 
 ensureAppTimeZone();
@@ -33,7 +33,11 @@ async function telegram(method: string, body: unknown): Promise<void> {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  if (!response.ok) throw new Error(`Telegram ${method} failed with ${response.status}`);
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({})) as { description?: string };
+    const chatId = typeof body === "object" && body && "chat_id" in body ? String((body as { chat_id?: unknown }).chat_id) : "unknown";
+    throw new Error(`Telegram ${method} failed with ${response.status}${data.description ? `: ${data.description}` : ""} (chat_id=${chatId})`);
+  }
 }
 
 export async function sendMessage(chatId: string, text: string, replyMarkup?: unknown): Promise<void> {
@@ -185,15 +189,15 @@ async function sendDoneList(chatId: string, title: string): Promise<void> {
 
 function snoozeDateFromPreset(preset: string): string {
   const now = new Date();
-  if (preset === "10m") return new Date(now.getTime() + 10 * 60_000).toISOString().slice(0, 19);
-  if (preset === "30m") return new Date(now.getTime() + 30 * 60_000).toISOString().slice(0, 19);
+  if (preset === "10m") return nowUtcIso(new Date(now.getTime() + 10 * 60_000));
+  if (preset === "30m") return nowUtcIso(new Date(now.getTime() + 30 * 60_000));
   if (preset === "tomorrow_9") {
-    const tomorrow = new Date(now);
+    const tomorrow = israelWallClockDate(now);
     tomorrow.setDate(tomorrow.getDate() + 1);
     tomorrow.setHours(9, 0, 0, 0);
-    return new Date(tomorrow.getTime() - tomorrow.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+    return wallClockDateToUtcIso(tomorrow);
   }
-  return new Date(now.getTime() + 60 * 60_000).toISOString().slice(0, 19);
+  return nowUtcIso(new Date(now.getTime() + 60 * 60_000));
 }
 
 function snoozeKeyboard(id: number) {

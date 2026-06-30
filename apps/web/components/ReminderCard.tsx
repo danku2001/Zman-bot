@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { formatHebrewWallClock } from "../lib/date";
+import { datetimeLocalFromUtcIso, formatHebrewWallClock, utcIsoFromIsraelDatetimeLocal } from "../lib/date";
 import type { Reminder } from "../lib/types";
 
 const dayNames = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
@@ -50,7 +50,7 @@ export function ReminderCard({
   const recurrence = recurrenceLabel(reminder);
   const [editing, setEditing] = useState(false);
   const [task, setTask] = useState(reminder.task);
-  const [dueAt, setDueAt] = useState(reminder.dueAt.slice(0, 16));
+  const [dueAt, setDueAt] = useState(datetimeLocalFromUtcIso(reminder.dueAt));
   const [category, setCategory] = useState(reminder.category);
   const [priority, setPriority] = useState<Reminder["priority"]>(reminder.priority);
   const [saving, setSaving] = useState(false);
@@ -61,7 +61,7 @@ export function ReminderCard({
     try {
       await onUpdate(reminder.id, {
         task,
-        dueAt: dueAt.length === 16 ? `${dueAt}:00` : dueAt,
+        dueAt: utcIsoFromIsraelDatetimeLocal(dueAt),
         category,
         priority
       });

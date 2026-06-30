@@ -6,6 +6,7 @@ import { dashboardCookieName, dashboardCookieValue } from "./auth";
 import { isSchedulerAuthorized } from "./scheduler-auth";
 import { GET as healthGet } from "../../app/api/health/route";
 import { GET as schedulerGet } from "../../app/api/scheduler/run/route";
+import { GET as schedulerDebugGet } from "../../app/api/debug/scheduler/route";
 import { POST as webhookPost } from "../../app/api/telegram/webhook/route";
 
 function request(path: string, headers?: HeadersInit): NextRequest {
@@ -57,6 +58,17 @@ test("scheduler run still requires CRON_SECRET", async () => {
 
   const missing = await schedulerGet(request("/api/scheduler/run"));
   const wrong = await schedulerGet(request("/api/scheduler/run?secret=wrong"));
+
+  assert.equal(missing.status, 401);
+  assert.equal(wrong.status, 401);
+});
+
+test("scheduler debug still requires CRON_SECRET", async () => {
+  process.env.CRON_SECRET = "cron-secret";
+  process.env.DASHBOARD_PASSWORD = "dashboard-password";
+
+  const missing = await schedulerDebugGet(request("/api/debug/scheduler"));
+  const wrong = await schedulerDebugGet(request("/api/debug/scheduler?secret=wrong"));
 
   assert.equal(missing.status, 401);
   assert.equal(wrong.status, 401);

@@ -10,13 +10,9 @@ import {
   rescheduleRecurringReminder
 } from "./db";
 import { sendMessage } from "./telegram";
-import { ensureAppTimeZone, formatIsraelLocalIso } from "./time";
+import { ensureAppTimeZone, formatHebrewWallClock, nowUtcIso } from "./time";
 
 ensureAppTimeZone();
-
-function nowLocalIso(): string {
-  return formatIsraelLocalIso();
-}
 
 function completionKeyboard(id: number) {
   return {
@@ -33,15 +29,30 @@ function completionKeyboard(id: number) {
   };
 }
 
-export async function runSchedulerOnce(limit = 25): Promise<{ ok: true; sent: number; recovered: number; failed: number; durationMs: number }> {
+export async function runSchedulerOnce(limit = 25): Promise<{
+  ok: true;
+  sent: number;
+  recovered: number;
+  failed: number;
+  durationMs: number;
+  checkedAtUtc: string;
+  checkedAtIsrael: string;
+  claimedIds: number[];
+  failureReasons: string[];
+}> {
   const startedAt = Date.now();
+  const checkedAtUtc = nowUtcIso();
+  const checkedAtIsrael = formatHebrewWallClock(checkedAtUtc, checkedAtUtc, "medium");
   const recovered = await recoverStaleSendingReminders();
   let sent = 0;
   let failed = 0;
+  const claimedIds: number[] = [];
+  const failureReasons: string[] = [];
 
   for (let i = 0; i < limit; i += 1) {
-    const reminder = await claimDueReminder(nowLocalIso());
+    const reminder = await claimDueReminder(checkedAtUtc);
     if (!reminder) break;
+    claimedIds.push(reminder.id);
     try {
       const isRecurring = Boolean(reminder.recurrenceType);
       await sendMessage(
@@ -51,13 +62,14 @@ export async function runSchedulerOnce(limit = 25): Promise<{ ok: true; sent: nu
       );
       if (reminder.recurrenceType) {
         const next = await rescheduleRecurringReminder(reminder);
-        await sendMessage(reminder.chatId, `התזכורת הבאה נקבעה ל-${next.dueAt.replace("T", " ")}`);
+        await sendMessage(reminder.chatId, `התזכורת הבאה נקבעה ל-${formatHebrewWallClock(next.dueAt)}`);
       } else {
         await markReminderNotifiedAfterSend(reminder);
       }
       sent += 1;
-    } catch {
+    } catch (error) {
       failed += 1;
+      failureReasons.push(`reminder ${reminder.id}: ${error instanceof Error ? error.message : "Unknown Telegram send error"}`);
       await releaseReminderAfterSendFailure(reminder.id);
     }
   }
@@ -65,17 +77,19 @@ export async function runSchedulerOnce(limit = 25): Promise<{ ok: true; sent: nu
   await clearMaxedFollowups();
 
   for (let i = 0; i < limit; i += 1) {
-    const reminder = await claimDueFollowupReminder(nowLocalIso());
+    const reminder = await claimDueFollowupReminder(checkedAtUtc);
     if (!reminder) break;
+    claimedIds.push(reminder.id);
     try {
       await sendMessage(reminder.chatId, `⏰ תזכורת חוזרת:\n${reminder.task}\n\nהאם ביצעת?`, completionKeyboard(reminder.id));
       await markFollowupSent(reminder);
       sent += 1;
-    } catch {
+    } catch (error) {
       failed += 1;
+      failureReasons.push(`followup ${reminder.id}: ${error instanceof Error ? error.message : "Unknown Telegram send error"}`);
       await releaseFollowupAfterSendFailure(reminder);
     }
   }
 
-  return { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt };
+  return { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt, checkedAtUtc, checkedAtIsrael, claimedIds, failureReasons };
 }

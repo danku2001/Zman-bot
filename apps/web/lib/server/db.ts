@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { calculateNextDueAt, normalizeHebrewText } from "./parser";
-import { ensureAppTimeZone, formatIsraelLocalIso, formatWallClockIso, israelWallClockDate } from "./time";
+import { ensureAppTimeZone, nowUtcIso, normalizeToUtcIso, wallClockDateToUtcIso, israelWallClockDate } from "./time";
 import type { ParsedReminder, Recurrence, ReminderPriority, ReminderStatus, RecurrenceType } from "./types";
 import type { Reminder, ReminderEvent, ReminderStats } from "../types";
 
@@ -48,9 +48,13 @@ function sql(): Sql {
 
 function toIso(value: unknown): string | null {
   if (!value) return null;
-  const candidate = value instanceof Date ? value : new Date(String(value));
-  if (!Number.isFinite(candidate.getTime())) return null;
-  return formatIsraelLocalIso(candidate);
+  return normalizeToUtcIso(value instanceof Date ? value : String(value));
+}
+
+function requireUtcIso(value: string | Date | null | undefined, field: string): string {
+  const utcIso = normalizeToUtcIso(value);
+  if (!utcIso) throw new Error(`Invalid ${field}`);
+  return utcIso;
 }
 
 function parseDays(value: ReminderRow["recurrence_days_of_week"]): number[] | null {
@@ -137,13 +141,14 @@ function memoryEvent(reminderId: number | null, chatId: string, eventType: strin
     chatId,
     eventType,
     payload: payload ? JSON.stringify(payload) : null,
-    createdAt: formatIsraelLocalIso()
+    createdAt: nowUtcIso()
   });
   memoryState.eventId += 1;
 }
 
 function memoryCreateReminder(chatId: string, parsed: ParsedReminder): Reminder {
-  const timestamp = formatIsraelLocalIso();
+  const timestamp = nowUtcIso();
+  const dueAt = requireUtcIso(parsed.dueAt, "dueAt");
   const reminder: Reminder = {
     id: memoryState.reminderId,
     chatId,
@@ -151,7 +156,7 @@ function memoryCreateReminder(chatId: string, parsed: ParsedReminder): Reminder 
     normalizedTask: normalizeHebrewText(parsed.task),
     category: parsed.category ?? "כללי",
     priority: parsed.priority ?? "רגיל",
-    dueAt: parsed.dueAt,
+    dueAt,
     recurrenceType: parsed.recurrence?.type ?? null,
     recurrenceDayOfWeek: parsed.recurrence?.dayOfWeek ?? null,
     recurrenceDaysOfWeek: parsed.recurrence?.daysOfWeek ?? null,
@@ -191,7 +196,7 @@ function memoryByChat(chatId: string): Reminder[] {
 function memorySet(id: number, chatId: string, updates: Partial<Reminder>): Reminder | null {
   const reminder = memoryState.reminders.find((item) => item.id === id && item.chatId === chatId);
   if (!reminder) return null;
-  Object.assign(reminder, updates, { updatedAt: formatIsraelLocalIso() });
+  Object.assign(reminder, updates, { updatedAt: nowUtcIso() });
   return cloneReminder(reminder);
 }
 
@@ -285,6 +290,14 @@ export async function migrate(): Promise<void> {
   migrated = true;
 }
 
+export async function getDatabaseNowUtc(): Promise<string | null> {
+  if (isMemoryDb()) return nowUtcIso();
+  if (!process.env.DATABASE_URL) return null;
+  await migrate();
+  const rows = await sql()`SELECT NOW() AS now` as Array<{ now: string | Date }>;
+  return toIso(rows[0]?.now);
+}
+
 export async function claimTelegramUpdate(updateId: string, chatId?: string | null): Promise<boolean> {
   if (isMemoryDb()) {
     const existing = memoryState.processedUpdates.get(updateId);
@@ -293,7 +306,7 @@ export async function claimTelegramUpdate(updateId: string, chatId?: string | nu
       chatId: chatId ?? null,
       status: "processing",
       attempts: (existing?.attempts ?? 0) + 1,
-      startedAt: formatIsraelLocalIso()
+      startedAt: nowUtcIso()
     });
     return true;
   }
@@ -323,7 +336,7 @@ export async function markTelegramUpdateProcessed(updateId: string): Promise<voi
       chatId: existing?.chatId ?? null,
       status: "processed",
       attempts: existing?.attempts ?? 1,
-      startedAt: existing?.startedAt ?? formatIsraelLocalIso()
+      startedAt: existing?.startedAt ?? nowUtcIso()
     });
     return;
   }
@@ -342,7 +355,7 @@ export async function markTelegramUpdateFailed(updateId: string, error: string):
       chatId: existing?.chatId ?? null,
       status: "failed",
       attempts: existing?.attempts ?? 1,
-      startedAt: existing?.startedAt ?? formatIsraelLocalIso(),
+      startedAt: existing?.startedAt ?? nowUtcIso(),
       error
     });
     return;
@@ -378,7 +391,7 @@ export async function createReminder(chatId: string, parsed: ParsedReminder): Pr
       recurrence_month, recurrence_time, status, source_text
     ) VALUES (
       ${chatId}, ${parsed.task}, ${normalizeHebrewText(parsed.task)}, ${parsed.category ?? "כללי"},
-      ${parsed.priority ?? "רגיל"}, (${parsed.dueAt}::timestamp AT TIME ZONE 'Asia/Jerusalem'), ${parsed.recurrence?.type ?? null},
+      ${parsed.priority ?? "רגיל"}, ${requireUtcIso(parsed.dueAt, "dueAt")}::timestamptz, ${parsed.recurrence?.type ?? null},
       ${parsed.recurrence?.dayOfWeek ?? null}, ${parsed.recurrence?.daysOfWeek ? JSON.stringify(parsed.recurrence.daysOfWeek) : null},
       ${parsed.recurrence?.dayOfMonth ?? null}, ${parsed.recurrence?.month ?? null},
       ${parsed.recurrence?.time ?? null}, 'pending', ${parsed.sourceText ?? null}
@@ -496,27 +509,27 @@ export async function getRange(chatId: string, startIso: string, endIso: string)
   const rows = await sql()`
     SELECT * FROM reminders
     WHERE chat_id = ${chatId}
-      AND due_at BETWEEN (${startIso}::timestamp AT TIME ZONE 'Asia/Jerusalem')
-                     AND (${endIso}::timestamp AT TIME ZONE 'Asia/Jerusalem')
+      AND due_at BETWEEN ${requireUtcIso(startIso, "range start")}::timestamptz
+                     AND ${requireUtcIso(endIso, "range end")}::timestamptz
     ORDER BY due_at ASC
   ` as ReminderRow[];
   return rows.map(mapReminder);
 }
 
-function localIso(date = new Date()): string {
-  return formatIsraelLocalIso(date);
+function utcIso(date = new Date()): string {
+  return nowUtcIso(date);
 }
 
 function nextFollowupIso(date = new Date()): string {
   const safeDate = Number.isFinite(date.getTime()) ? date : new Date();
-  return localIso(new Date(safeDate.getTime() + FOLLOWUP_INTERVAL_MS));
+  return utcIso(new Date(safeDate.getTime() + FOLLOWUP_INTERVAL_MS));
 }
 
 function rangeForDay(now: Date, offset: number): { startIso: string; endIso: string } {
   now = israelWallClockDate(now);
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 0, 0, 0, 0);
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + offset, 23, 59, 59, 999);
-  return { startIso: formatWallClockIso(start), endIso: formatWallClockIso(end) };
+  return { startIso: wallClockDateToUtcIso(start), endIso: wallClockDateToUtcIso(end) };
 }
 
 export async function getTodayRemindersByChatId(chatId: string, now = new Date()): Promise<Reminder[]> {
@@ -533,7 +546,7 @@ export async function getWeekRemindersByChatId(chatId: string, now = new Date())
   now = israelWallClockDate(now);
   const start = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0, 0);
   const end = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 7, 23, 59, 59, 999);
-  return getRange(chatId, formatWallClockIso(start), formatWallClockIso(end));
+  return getRange(chatId, wallClockDateToUtcIso(start), wallClockDateToUtcIso(end));
 }
 
 export async function getRecurringRemindersByChatId(chatId: string): Promise<Reminder[]> {
@@ -543,14 +556,14 @@ export async function getRecurringRemindersByChatId(chatId: string): Promise<Rem
   return rows.map(mapReminder);
 }
 
-export async function getOverdueRemindersByChatId(chatId: string, nowIso = localIso()): Promise<Reminder[]> {
+export async function getOverdueRemindersByChatId(chatId: string, nowIso = utcIso()): Promise<Reminder[]> {
   if (isMemoryDb()) return memoryByChat(chatId).filter((reminder) => reminder.status === "pending" && reminder.dueAt < nowIso);
   await migrate();
   const rows = await sql()`
     SELECT * FROM reminders
     WHERE chat_id = ${chatId}
       AND status = 'pending'
-      AND due_at < (${nowIso}::timestamp AT TIME ZONE 'Asia/Jerusalem')
+      AND due_at < ${requireUtcIso(nowIso, "nowIso")}::timestamptz
     ORDER BY due_at ASC
   ` as ReminderRow[];
   return rows.map(mapReminder);
@@ -579,7 +592,7 @@ export async function searchRemindersByChatId(chatId: string, query: string): Pr
 
 export async function markReminderDone(chatId: string, id: number): Promise<boolean> {
   if (isMemoryDb()) {
-    const updated = memorySet(id, chatId, { status: "done", sendingAt: null, nextFollowupAt: null, completedAt: formatIsraelLocalIso() });
+    const updated = memorySet(id, chatId, { status: "done", sendingAt: null, nextFollowupAt: null, completedAt: nowUtcIso() });
     if (updated) {
       memoryEvent(id, chatId, "completed");
       memoryEvent(id, chatId, "followup_stopped_done");
@@ -602,7 +615,7 @@ export async function markReminderDone(chatId: string, id: number): Promise<bool
 
 export async function cancelReminder(chatId: string, id: number): Promise<boolean> {
   if (isMemoryDb()) {
-    const updated = memorySet(id, chatId, { status: "cancelled", sendingAt: null, nextFollowupAt: null, cancelledAt: formatIsraelLocalIso() });
+    const updated = memorySet(id, chatId, { status: "cancelled", sendingAt: null, nextFollowupAt: null, cancelledAt: nowUtcIso() });
     if (updated) {
       memoryEvent(id, chatId, "cancelled");
       memoryEvent(id, chatId, "followup_stopped_cancelled");
@@ -652,7 +665,7 @@ export async function snoozeReminder(chatId: string, id: number, snoozeUntil: st
       status: "pending",
       sendingAt: null,
       nextFollowupAt: null,
-      lastSnoozedAt: formatIsraelLocalIso(),
+      lastSnoozedAt: nowUtcIso(),
       snoozeCount: existing.snoozeCount + 1
     });
     memoryEvent(id, chatId, "snoozed", { snoozeUntil });
@@ -661,7 +674,7 @@ export async function snoozeReminder(chatId: string, id: number, snoozeUntil: st
   await migrate();
   const rows = await sql()`
     UPDATE reminders
-    SET due_at = (${snoozeUntil}::timestamp AT TIME ZONE 'Asia/Jerusalem'), status = 'pending', sending_at = NULL, next_followup_at = NULL,
+    SET due_at = ${requireUtcIso(snoozeUntil, "snoozeUntil")}::timestamptz, status = 'pending', sending_at = NULL, next_followup_at = NULL,
         last_snoozed_at = NOW(), snooze_count = COALESCE(snooze_count, 0) + 1, updated_at = NOW()
     WHERE id = ${id} AND chat_id = ${chatId} AND status IN ('pending', 'sending', 'notified')
     RETURNING *
@@ -693,7 +706,7 @@ export async function updateReminder(chatId: string, id: number, updates: Partia
   const rows = await sql()`
     UPDATE reminders
     SET task = ${task}, normalized_task = ${normalizeHebrewText(task)}, category = ${updates.category ?? existing.category},
-        priority = ${updates.priority ?? existing.priority}, due_at = (${updates.dueAt ?? existing.dueAt}::timestamp AT TIME ZONE 'Asia/Jerusalem'),
+        priority = ${updates.priority ?? existing.priority}, due_at = ${requireUtcIso(updates.dueAt ?? existing.dueAt, "dueAt")}::timestamptz,
         status = ${updates.status ?? existing.status}, updated_at = NOW()
     WHERE id = ${id} AND chat_id = ${chatId}
     RETURNING *
@@ -717,6 +730,53 @@ export async function getReminderEventsByChatId(chatId: string, limit = 100): Pr
   return rows.map(mapEvent);
 }
 
+export async function getSchedulerDebugSnapshot(nowIso = nowUtcIso()): Promise<{
+  nowUtc: string;
+  pendingDueCount: number;
+  nextPendingReminder: Pick<Reminder, "id" | "chatId" | "task" | "dueAt" | "status"> | null;
+  lastSchedulerEvents: Array<Pick<ReminderEvent, "id" | "reminderId" | "chatId" | "eventType" | "createdAt">>;
+}> {
+  const normalizedNow = requireUtcIso(nowIso, "nowIso");
+  if (isMemoryDb()) {
+    const pending = memoryState.reminders
+      .filter((reminder) => reminder.status === "pending")
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+    const next = pending[0] ?? null;
+    return {
+      nowUtc: normalizedNow,
+      pendingDueCount: pending.filter((reminder) => reminder.dueAt <= normalizedNow).length,
+      nextPendingReminder: next ? { id: next.id, chatId: next.chatId, task: next.task, dueAt: next.dueAt, status: next.status } : null,
+      lastSchedulerEvents: memoryState.events
+        .filter((event) => ["sent", "send_recovered", "followup_sent", "followup_skipped"].includes(event.eventType))
+        .slice(0, 10)
+        .map((event) => ({ id: event.id, reminderId: event.reminderId, chatId: event.chatId, eventType: event.eventType, createdAt: event.createdAt }))
+    };
+  }
+  await migrate();
+  const countRows = await sql()`SELECT COUNT(*)::int AS count FROM reminders WHERE status = 'pending' AND due_at <= ${normalizedNow}::timestamptz` as Array<{ count: number }>;
+  const nextRows = await sql()`SELECT * FROM reminders WHERE status = 'pending' ORDER BY due_at ASC LIMIT 1` as ReminderRow[];
+  const eventRows = await sql()`
+    SELECT id, reminder_id, chat_id, event_type, payload, created_at
+    FROM reminder_events
+    WHERE event_type IN ('sent', 'send_recovered', 'followup_sent', 'followup_skipped')
+    ORDER BY created_at DESC
+    LIMIT 10
+  ` as Array<{ id: number; reminder_id: number | null; chat_id: string; event_type: string; payload: string | null; created_at: string }>;
+  const next = nextRows[0] ? mapReminder(nextRows[0]) : null;
+  return {
+    nowUtc: normalizedNow,
+    pendingDueCount: countRows[0]?.count ?? 0,
+    nextPendingReminder: next ? { id: next.id, chatId: next.chatId, task: next.task, dueAt: next.dueAt, status: next.status } : null,
+    lastSchedulerEvents: eventRows.map(mapEvent).map((event) => ({
+      id: event.id,
+      reminderId: event.reminderId,
+      chatId: event.chatId,
+      eventType: event.eventType,
+      createdAt: event.createdAt
+    }))
+  };
+}
+
 export async function getStatsByChatId(chatId: string, now = new Date()): Promise<ReminderStats> {
   if (isMemoryDb()) {
     const reminders = memoryByChat(chatId);
@@ -733,7 +793,7 @@ export async function getStatsByChatId(chatId: string, now = new Date()): Promis
       notified: reminders.filter((reminder) => reminder.status === "notified").length,
       done: reminders.filter((reminder) => reminder.status === "done").length,
       cancelled: reminders.filter((reminder) => reminder.status === "cancelled").length,
-      overdue: (await getOverdueRemindersByChatId(chatId, localIso(now))).length,
+      overdue: (await getOverdueRemindersByChatId(chatId, utcIso(now))).length,
       categories: active.reduce<Record<string, number>>((acc, reminder) => {
         acc[reminder.category] = (acc[reminder.category] ?? 0) + 1;
         return acc;
@@ -758,7 +818,7 @@ export async function getStatsByChatId(chatId: string, now = new Date()): Promis
     notified: reminders.filter((reminder) => reminder.status === "notified").length,
     done: reminders.filter((reminder) => reminder.status === "done").length,
     cancelled: reminders.filter((reminder) => reminder.status === "cancelled").length,
-    overdue: (await getOverdueRemindersByChatId(chatId, localIso(now))).length,
+    overdue: (await getOverdueRemindersByChatId(chatId, utcIso(now))).length,
     categories: active.reduce<Record<string, number>>((acc, reminder) => {
       acc[reminder.category] = (acc[reminder.category] ?? 0) + 1;
       return acc;
@@ -834,7 +894,7 @@ export async function claimDueReminder(nowIso: string): Promise<Reminder | null>
       .filter((item) => item.status === "pending" && item.dueAt <= nowIso)
       .sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
     if (!reminder) return null;
-    return memorySet(reminder.id, reminder.chatId, { status: "sending", sendingAt: formatIsraelLocalIso() });
+    return memorySet(reminder.id, reminder.chatId, { status: "sending", sendingAt: nowUtcIso() });
   }
   await migrate();
   const rows = await sql()`
@@ -843,7 +903,7 @@ export async function claimDueReminder(nowIso: string): Promise<Reminder | null>
     WHERE id = (
       SELECT id FROM reminders
       WHERE status = 'pending'
-        AND due_at <= (${nowIso}::timestamp AT TIME ZONE 'Asia/Jerusalem')
+        AND due_at <= ${requireUtcIso(nowIso, "nowIso")}::timestamptz
       ORDER BY due_at ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED
@@ -868,7 +928,7 @@ export async function markReminderNotifiedAfterSend(reminder: Reminder): Promise
     const nextFollowupAt = nextFollowupIso();
     const updated = memorySet(reminder.id, reminder.chatId, {
       status: "notified",
-      sentAt: formatIsraelLocalIso(),
+      sentAt: nowUtcIso(),
       sendingAt: null,
       nextFollowupAt,
       followupCount: 0,
@@ -882,7 +942,7 @@ export async function markReminderNotifiedAfterSend(reminder: Reminder): Promise
   const rows = await sql()`
     UPDATE reminders
     SET status = 'notified', sent_at = NOW(), sending_at = NULL,
-        next_followup_at = (${nextFollowupAt}::timestamp AT TIME ZONE 'Asia/Jerusalem'),
+        next_followup_at = ${requireUtcIso(nextFollowupAt, "nextFollowupAt")}::timestamptz,
         followup_count = 0, last_followup_at = NULL, updated_at = NOW()
     WHERE id = ${reminder.id} AND status = 'sending'
     RETURNING id
@@ -904,7 +964,7 @@ export async function deferReminderFollowup(chatId: string, id: number): Promise
   const nextFollowupAt = nextFollowupIso();
   const rows = await sql()`
     UPDATE reminders
-    SET next_followup_at = (${nextFollowupAt}::timestamp AT TIME ZONE 'Asia/Jerusalem'), updated_at = NOW()
+    SET next_followup_at = ${requireUtcIso(nextFollowupAt, "nextFollowupAt")}::timestamptz, updated_at = NOW()
     WHERE id = ${id} AND chat_id = ${chatId} AND status = 'notified'
     RETURNING id
   ` as Array<{ id: number }>;
@@ -918,7 +978,7 @@ export async function claimDueFollowupReminder(nowIso: string, maxFollowups = MA
       .filter((item) => item.status === "notified" && item.nextFollowupAt && item.nextFollowupAt <= nowIso && !item.sendingAt && item.followupCount < maxFollowups)
       .sort((a, b) => (a.nextFollowupAt ?? "").localeCompare(b.nextFollowupAt ?? ""))[0];
     if (!reminder) return null;
-    return memorySet(reminder.id, reminder.chatId, { sendingAt: formatIsraelLocalIso() });
+    return memorySet(reminder.id, reminder.chatId, { sendingAt: nowUtcIso() });
   }
   await migrate();
   const rows = await sql()`
@@ -928,7 +988,7 @@ export async function claimDueFollowupReminder(nowIso: string, maxFollowups = MA
       SELECT id FROM reminders
       WHERE status = 'notified'
         AND next_followup_at IS NOT NULL
-        AND next_followup_at <= (${nowIso}::timestamp AT TIME ZONE 'Asia/Jerusalem')
+        AND next_followup_at <= ${requireUtcIso(nowIso, "nowIso")}::timestamptz
         AND sending_at IS NULL
         AND COALESCE(followup_count, 0) < ${maxFollowups}
       ORDER BY next_followup_at ASC
@@ -959,7 +1019,7 @@ export async function markFollowupSent(reminder: Reminder, maxFollowups = MAX_FO
     const nextFollowupAt = nextCount >= maxFollowups ? null : nextFollowupIso();
     const updated = memorySet(reminder.id, reminder.chatId, {
       followupCount: nextCount,
-      lastFollowupAt: formatIsraelLocalIso(),
+      lastFollowupAt: nowUtcIso(),
       nextFollowupAt,
       sendingAt: null
     });
@@ -973,7 +1033,7 @@ export async function markFollowupSent(reminder: Reminder, maxFollowups = MAX_FO
   const rows = await sql()`
     UPDATE reminders
     SET followup_count = ${nextCount}, last_followup_at = NOW(),
-        next_followup_at = (${nextFollowupAt}::timestamp AT TIME ZONE 'Asia/Jerusalem'),
+        next_followup_at = ${nextFollowupAt ? requireUtcIso(nextFollowupAt, "nextFollowupAt") : null}::timestamptz,
         sending_at = NULL, updated_at = NOW()
     WHERE id = ${reminder.id} AND status = 'notified'
     RETURNING id
@@ -1017,7 +1077,7 @@ export async function rescheduleRecurringReminder(reminder: Reminder): Promise<R
     const updated = memorySet(reminder.id, reminder.chatId, {
       dueAt: nextDueAt,
       status: "pending",
-      sentAt: formatIsraelLocalIso(),
+      sentAt: nowUtcIso(),
       sendingAt: null,
       nextFollowupAt: null
     });
@@ -1029,7 +1089,7 @@ export async function rescheduleRecurringReminder(reminder: Reminder): Promise<R
   await migrate();
   const rows = await sql()`
     UPDATE reminders
-    SET due_at = (${nextDueAt}::timestamp AT TIME ZONE 'Asia/Jerusalem'), status = 'pending', sent_at = NOW(), sending_at = NULL,
+    SET due_at = ${requireUtcIso(nextDueAt, "nextDueAt")}::timestamptz, status = 'pending', sent_at = NOW(), sending_at = NULL,
         next_followup_at = NULL, updated_at = NOW()
     WHERE id = ${reminder.id}
     RETURNING *
@@ -1041,7 +1101,7 @@ export async function rescheduleRecurringReminder(reminder: Reminder): Promise<R
 
 export async function recoverStaleSendingReminders(cutoffIso?: string): Promise<number> {
   if (isMemoryDb()) {
-    const cutoff = cutoffIso ?? formatIsraelLocalIso(new Date(Date.now() - 5 * 60_000));
+    const cutoff = cutoffIso ?? nowUtcIso(new Date(Date.now() - 5 * 60_000));
     const rows = memoryState.reminders.filter((reminder) =>
       (reminder.status === "sending" || reminder.status === "notified") && reminder.sendingAt && reminder.sendingAt < cutoff
     );
