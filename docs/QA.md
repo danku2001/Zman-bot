@@ -1,110 +1,88 @@
-# ZmanBot v1.0 QA Checklist
+# ZmanBot QA
 
-רשימת בדיקה ידנית לפני פריסה או release.
+## Local automated QA
 
-## הכנה
+Run the full local safety net:
 
-- [ ] להריץ `npm install`.
-- [ ] ליצור `apps/bot/.env` מתוך `apps/bot/.env.example`.
-- [ ] לוודא ש-`TELEGRAM_BOT_TOKEN` מוגדר רק ב-`.env` או בסביבת השרת.
-- [ ] ליצור `apps/web/.env` מתוך `apps/web/.env.example`.
-- [ ] לא להגדיר `NEXT_PUBLIC_API_SECRET`. הדשבורד משתמש ב-cookie מאובטח אחרי login, ו-`API_SECRET` נשאר רק בצד השרת/סקריפטים חיצוניים.
-- [ ] להריץ `npm run dev`.
-- [ ] לבדוק ש-`GET /health` מחזיר תשובה תקינה.
+```bash
+npm run qa
+```
 
-## Telegram Commands
+This runs lint, unit/integration tests, security checks, build, and the E2E placeholder. The most important integration test is:
 
-- [ ] `/start` מחזיר הודעת פתיחה.
-- [ ] `/help` מציג דוגמאות ופקודות.
-- [ ] `/id` מציג Chat ID נכון.
-- [ ] `/list` מציג את כל התזכורות.
-- [ ] `/today` מציג תזכורות להיום.
-- [ ] `/week` מציג תזכורות לשבוע.
-- [ ] `/recurring` מציג תזכורות קבועות.
-- [ ] `/overdue` מציג רק תזכורות `pending` שעבר זמנן.
-- [ ] `/search חשבונית` מחזיר תוצאות רלוונטיות.
-- [ ] `/stats` מציג ספירות ללא שגיאה.
+```bash
+apps/web/lib/server/sync-flow.test.ts
+```
 
-## Creating Reminders
+It proves:
 
-- [ ] לשלוח `תזכיר לי עוד דקה לבדוק` ולוודא שנוצרת תזכורת.
-- [ ] לשלוח `תזכיר לי מחר ב-9 לשלוח מייל`.
-- [ ] לשלוח `מחר ב-9 תזכיר לי לשלוח מייל`.
-- [ ] לשלוח `תזכיר לי היום בערב ללכת לאימון`.
-- [ ] לשלוח `שני הבא ב-14:00 פגישה`.
-- [ ] לשלוח `תזכיר לי כל יום ב-8 לשתות מים`.
-- [ ] לשלוח `תזכיר לי כל שבוע ביום ראשון ב-9 לבדוק דוחות`.
-- [ ] לוודא שתזכורת ללא זמן מפעילה שאלת המשך.
+- Telegram-created reminders are visible through the dashboard API.
+- Dashboard-created reminders are picked up by the scheduler.
+- Scheduler sends to the same Telegram chat ID.
+- Done from Telegram is reflected in dashboard API.
+- Done from dashboard is reflected in Telegram `/completed`.
 
-## Status Lifecycle
+The sync test uses `ZMANBOT_TEST_DB=memory` and mocked Telegram fetch calls. It does not touch production data, Neon, or real Telegram tokens.
 
-- [ ] תזכורת חדשה מופיעה כ-`pending`.
-- [ ] בזמן השליחה היא עוברת ל-`sending`.
-- [ ] אחרי שליחה חד-פעמית היא מופיעה כ-`notified`, לא `done`.
-- [ ] כפתור `בוצע` משנה `notified` ל-`done`.
-- [ ] כפתור `דחה` משנה `notified` ל-`pending` עם `due_at` חדש.
-- [ ] כפתור `בטל` משנה `pending`, `sending`, `notified`, או `done` ל-`cancelled`.
-- [ ] תזכורת קבועה נשלחת, מקבלת `due_at` הבא, ונשארת `pending`.
+## GitHub Actions
 
-## Text Actions
+Every push and pull request runs `.github/workflows/ci.yml`:
 
-- [ ] `בטל את #ID` מבטל תזכורת לפי ID.
-- [ ] `בטל את התזכורת חשבונית` מבטל לפי טקסט חלקי.
-- [ ] `סמן כבוצע את #ID` מסמן כבוצע לפי ID.
-- [ ] `סיימתי את חשבונית` מסמן כבוצע לפי טקסט חלקי.
-- [ ] `דחה את #ID למחר ב-9` דוחה תזכורת.
+- Node 20
+- `npm ci` when `package-lock.json` exists
+- `npm run lint`
+- `npm run test`
+- `npm run test:security`
+- `npm run build`
 
-## Dashboard
+Any failed command fails CI.
 
-- [ ] Home מציג active, today, week, overdue, recurring, notified, done, cancelled.
-- [ ] Recent activity נטען ללא שגיאה.
-- [ ] All reminders נטען ומציג תזכורות.
-- [ ] Today, Tomorrow, Week, Overdue, Recurring, Done, Cancelled נטענים.
-- [ ] Search מחפש תזכורות.
-- [ ] בכל רשימה חיפוש מקומי עובד.
-- [ ] פילטר status עובד כולל `notified`.
-- [ ] פילטר category עובד.
-- [ ] פילטר priority עובד.
-- [ ] מיון לפי due date עובד לשני הכיוונים.
-- [ ] Mark done עובד.
-- [ ] Snooze עובד.
-- [ ] Cancel עובד.
-- [ ] Delete מהדשבורד מוחק מהרשימה ושומר אירוע audit.
-- [ ] Empty state ברור כאשר אין תוצאות.
-- [ ] Loading/error states נראים תקינים.
-- [ ] המסך קריא במובייל וב-RTL.
+## Security QA
 
-## Import / Export
+Run:
 
-- [ ] Export מוריד JSON.
-- [ ] ה-JSON כולל `reminders` ו-`events`.
-- [ ] ה-JSON לא כולל `.env`, `TELEGRAM_BOT_TOKEN`, `API_SECRET`, או סודות.
-- [ ] Import של קובץ export עובד.
-- [ ] Import עם פריטים לא תקינים מציג כמה נכשלו.
-- [ ] Import לא דורס תזכורות קיימות.
+```bash
+npm run test:security
+```
 
-## Restart Survival
+This checks that real env files and common secret values are not committed, frontend code does not expose `NEXT_PUBLIC_API_SECRET`, frontend API calls do not default to `localhost:4000`, and dashboard fetches include credentials.
 
-- [ ] ליצור תזכורת.
-- [ ] לעצור ולהפעיל מחדש את הבוט.
-- [ ] לוודא שהתזכורת עדיין קיימת.
-- [ ] לוודא שתזכורת `sending` ישנה חוזרת ל-`pending` ונרשם `send_recovered`.
+## Telegram-dashboard sync manual test
 
-## Public Repo Safety
+1. Deploy latest `main` to Vercel.
+2. Confirm Vercel env vars exist: `DATABASE_URL`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_WEBHOOK_SECRET`, `DASHBOARD_PASSWORD`, `API_SECRET`, `CRON_SECRET`.
+3. In dashboard Settings, click `תקן Telegram Webhook`.
+4. Send `/id` in Telegram and copy the chat ID into the dashboard.
+5. Send `תזכיר לי עוד דקה בדיקת סינק`.
+6. Confirm the dashboard shows the reminder for the same chat ID.
+7. Confirm the shown due time matches Israel wall-clock time.
 
-- [ ] `.env` מוחרג.
-- [ ] `node_modules` מוחרג.
-- [ ] `.next` מוחרג.
-- [ ] `dist` מוחרג.
-- [ ] `data/*.db` מוחרג.
-- [ ] logs מוחרגים.
-- [ ] `.DS_Store` מוחרג.
-- [ ] אין טוקן אמיתי בקבצים שעולים ל-Git.
-- [ ] `SECURITY.md` מסביר רוטציה של Telegram token.
-- [ ] README כולל `Before Pushing To GitHub`.
+## Scheduler manual test
 
-## Final Commands
+The scheduler endpoint is:
 
-- [ ] `npm run test`
-- [ ] `npm run lint`
-- [ ] `npm run build`
+```text
+https://YOUR_DOMAIN/api/scheduler/run?secret=YOUR_CRON_SECRET
+```
+
+For free 24/7 reminders, cron-job.org must call it every minute. Vercel serverless functions do not run continuously by themselves.
+
+Manual dashboard proof:
+
+1. Create a due reminder.
+2. Open Settings.
+3. Click `הרץ Scheduler`.
+4. Confirm Telegram receives the reminder.
+5. Confirm the reminder status becomes `notified`.
+
+## Production after deploy
+
+After every deploy:
+
+- Dashboard Settings should show API base `same-origin /api`.
+- Health should return `zmanbot / vercel`.
+- Database mode should be `postgres`.
+- Telegram webhook URL should be `https://YOUR_DOMAIN/api/telegram/webhook`.
+- Telegram pending updates should be `0`.
+- cron-job.org history should show HTTP `200` every minute.
+

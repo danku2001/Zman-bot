@@ -80,7 +80,7 @@ export function getSyncDebug(chatId: string): Promise<{
   total: number;
   countsByStatus: Record<Reminder["status"], number>;
   latest: Array<Pick<Reminder, "id" | "task" | "dueAt" | "status" | "sourceText">>;
-  databaseMode: "postgres" | "sqlite";
+  databaseMode: "postgres" | "sqlite" | "memory";
 }> {
   return request(`/api/debug/sync?chat_id=${encodeURIComponent(chatId)}`);
 }

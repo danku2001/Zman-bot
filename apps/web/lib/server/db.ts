@@ -98,6 +98,103 @@ function mapReminder(row: ReminderRow): Reminder {
 const FOLLOWUP_INTERVAL_MS = 5 * 60_000;
 export const MAX_FOLLOWUPS = Number(process.env.MAX_FOLLOWUPS ?? 12);
 
+type MemoryState = {
+  reminderId: number;
+  eventId: number;
+  reminders: Reminder[];
+  events: ReminderEvent[];
+  processedUpdates: Map<string, { chatId: string | null; status: "processing" | "processed" | "failed"; attempts: number; startedAt: string; error?: string }>;
+};
+
+const memoryState: MemoryState = {
+  reminderId: 1,
+  eventId: 1,
+  reminders: [],
+  events: [],
+  processedUpdates: new Map()
+};
+
+function isMemoryDb(): boolean {
+  return process.env.ZMANBOT_TEST_DB === "memory";
+}
+
+export function resetMemoryDb(): void {
+  memoryState.reminderId = 1;
+  memoryState.eventId = 1;
+  memoryState.reminders = [];
+  memoryState.events = [];
+  memoryState.processedUpdates.clear();
+}
+
+function cloneReminder(reminder: Reminder): Reminder {
+  return { ...reminder, recurrenceDaysOfWeek: reminder.recurrenceDaysOfWeek ? [...reminder.recurrenceDaysOfWeek] : null };
+}
+
+function memoryEvent(reminderId: number | null, chatId: string, eventType: string, payload?: unknown): void {
+  memoryState.events.unshift({
+    id: memoryState.eventId,
+    reminderId,
+    chatId,
+    eventType,
+    payload: payload ? JSON.stringify(payload) : null,
+    createdAt: formatIsraelLocalIso()
+  });
+  memoryState.eventId += 1;
+}
+
+function memoryCreateReminder(chatId: string, parsed: ParsedReminder): Reminder {
+  const timestamp = formatIsraelLocalIso();
+  const reminder: Reminder = {
+    id: memoryState.reminderId,
+    chatId,
+    task: parsed.task,
+    normalizedTask: normalizeHebrewText(parsed.task),
+    category: parsed.category ?? "כללי",
+    priority: parsed.priority ?? "רגיל",
+    dueAt: parsed.dueAt,
+    recurrenceType: parsed.recurrence?.type ?? null,
+    recurrenceDayOfWeek: parsed.recurrence?.dayOfWeek ?? null,
+    recurrenceDaysOfWeek: parsed.recurrence?.daysOfWeek ?? null,
+    recurrenceDayOfMonth: parsed.recurrence?.dayOfMonth ?? null,
+    recurrenceMonth: parsed.recurrence?.month ?? null,
+    recurrenceTime: parsed.recurrence?.time ?? null,
+    status: "pending",
+    createdAt: timestamp,
+    updatedAt: timestamp,
+    sentAt: null,
+    sendingAt: null,
+    cancelledAt: null,
+    completedAt: null,
+    lastSnoozedAt: null,
+    snoozeCount: 0,
+    nextFollowupAt: null,
+    followupCount: 0,
+    lastFollowupAt: null,
+    sourceText: parsed.sourceText ?? null
+  };
+  memoryState.reminders.push(reminder);
+  memoryState.reminderId += 1;
+  memoryEvent(reminder.id, chatId, "created", reminder);
+  return cloneReminder(reminder);
+}
+
+function memoryByChat(chatId: string): Reminder[] {
+  return memoryState.reminders
+    .filter((reminder) => reminder.chatId === chatId)
+    .sort((a, b) => {
+      const statusOrder = { pending: 0, sending: 1, notified: 2, done: 3, cancelled: 4 } satisfies Record<ReminderStatus, number>;
+      return statusOrder[a.status] - statusOrder[b.status] || a.dueAt.localeCompare(b.dueAt);
+    })
+    .map(cloneReminder);
+}
+
+function memorySet(id: number, chatId: string, updates: Partial<Reminder>): Reminder | null {
+  const reminder = memoryState.reminders.find((item) => item.id === id && item.chatId === chatId);
+  if (!reminder) return null;
+  Object.assign(reminder, updates, { updatedAt: formatIsraelLocalIso() });
+  return cloneReminder(reminder);
+}
+
 function mapEvent(row: {
   id: number;
   reminder_id: number | null;
@@ -117,6 +214,7 @@ function mapEvent(row: {
 }
 
 export async function migrate(): Promise<void> {
+  if (isMemoryDb()) return;
   if (migrated) return;
   const db = sql();
   await db`
@@ -188,6 +286,17 @@ export async function migrate(): Promise<void> {
 }
 
 export async function claimTelegramUpdate(updateId: string, chatId?: string | null): Promise<boolean> {
+  if (isMemoryDb()) {
+    const existing = memoryState.processedUpdates.get(updateId);
+    if (existing?.status === "processed" || existing?.status === "processing") return false;
+    memoryState.processedUpdates.set(updateId, {
+      chatId: chatId ?? null,
+      status: "processing",
+      attempts: (existing?.attempts ?? 0) + 1,
+      startedAt: formatIsraelLocalIso()
+    });
+    return true;
+  }
   await migrate();
   const rows = await sql()`
     INSERT INTO processed_updates (update_id, chat_id, status, processing_started_at, attempts)
@@ -208,6 +317,16 @@ export async function claimTelegramUpdate(updateId: string, chatId?: string | nu
 export const claimProcessedUpdate = claimTelegramUpdate;
 
 export async function markTelegramUpdateProcessed(updateId: string): Promise<void> {
+  if (isMemoryDb()) {
+    const existing = memoryState.processedUpdates.get(updateId);
+    memoryState.processedUpdates.set(updateId, {
+      chatId: existing?.chatId ?? null,
+      status: "processed",
+      attempts: existing?.attempts ?? 1,
+      startedAt: existing?.startedAt ?? formatIsraelLocalIso()
+    });
+    return;
+  }
   await migrate();
   await sql()`
     UPDATE processed_updates
@@ -217,6 +336,17 @@ export async function markTelegramUpdateProcessed(updateId: string): Promise<voi
 }
 
 export async function markTelegramUpdateFailed(updateId: string, error: string): Promise<void> {
+  if (isMemoryDb()) {
+    const existing = memoryState.processedUpdates.get(updateId);
+    memoryState.processedUpdates.set(updateId, {
+      chatId: existing?.chatId ?? null,
+      status: "failed",
+      attempts: existing?.attempts ?? 1,
+      startedAt: existing?.startedAt ?? formatIsraelLocalIso(),
+      error
+    });
+    return;
+  }
   await migrate();
   await sql()`
     UPDATE processed_updates
@@ -226,6 +356,10 @@ export async function markTelegramUpdateFailed(updateId: string, error: string):
 }
 
 async function addEvent(reminderId: number | null, chatId: string, eventType: string, payload?: unknown): Promise<void> {
+  if (isMemoryDb()) {
+    memoryEvent(reminderId, chatId, eventType, payload);
+    return;
+  }
   try {
     await migrate();
     await sql()`INSERT INTO reminder_events (reminder_id, chat_id, event_type, payload) VALUES (${reminderId}, ${chatId}, ${eventType}, ${payload ? JSON.stringify(payload) : null})`;
@@ -235,6 +369,7 @@ async function addEvent(reminderId: number | null, chatId: string, eventType: st
 }
 
 export async function createReminder(chatId: string, parsed: ParsedReminder): Promise<Reminder> {
+  if (isMemoryDb()) return memoryCreateReminder(chatId, parsed);
   await migrate();
   const rows = await sql()`
     INSERT INTO reminders (
@@ -256,12 +391,17 @@ export async function createReminder(chatId: string, parsed: ParsedReminder): Pr
 }
 
 export async function getReminderById(id: number): Promise<Reminder | null> {
+  if (isMemoryDb()) {
+    const reminder = memoryState.reminders.find((item) => item.id === id);
+    return reminder ? cloneReminder(reminder) : null;
+  }
   await migrate();
   const rows = await sql()`SELECT * FROM reminders WHERE id = ${id}` as ReminderRow[];
   return rows[0] ? mapReminder(rows[0]) : null;
 }
 
 export async function getRemindersByChatId(chatId: string): Promise<Reminder[]> {
+  if (isMemoryDb()) return memoryByChat(chatId);
   await migrate();
   const rows = await sql()`
     SELECT * FROM reminders
@@ -276,8 +416,24 @@ export async function getSyncDebugByChatId(chatId: string): Promise<{
   total: number;
   countsByStatus: Record<ReminderStatus, number>;
   latest: Array<Pick<Reminder, "id" | "task" | "dueAt" | "status" | "sourceText">>;
-  databaseMode: "postgres";
+  databaseMode: "postgres" | "memory";
 }> {
+  if (isMemoryDb()) {
+    const reminders = memoryByChat(chatId);
+    const countsByStatus: Record<ReminderStatus, number> = { pending: 0, sending: 0, notified: 0, done: 0, cancelled: 0 };
+    for (const reminder of reminders) countsByStatus[reminder.status] += 1;
+    return {
+      chatId,
+      total: reminders.length,
+      countsByStatus,
+      latest: reminders
+        .slice()
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+        .slice(0, 5)
+        .map((reminder) => ({ id: reminder.id, task: reminder.task, dueAt: reminder.dueAt, status: reminder.status, sourceText: reminder.sourceText })),
+      databaseMode: "memory"
+    };
+  }
   const reminders = await getRemindersByChatId(chatId);
   const countsByStatus: Record<ReminderStatus, number> = {
     pending: 0,
@@ -307,6 +463,16 @@ export async function getSyncDebugByChatId(chatId: string): Promise<{
 }
 
 export async function getKnownChats(): Promise<Array<{ chatId: string; total: number; latestActivityAt: string | null }>> {
+  if (isMemoryDb()) {
+    return Array.from(new Set(memoryState.reminders.map((reminder) => reminder.chatId))).map((chatId) => {
+      const reminders = memoryByChat(chatId);
+      return {
+        chatId,
+        total: reminders.length,
+        latestActivityAt: reminders.map((reminder) => reminder.updatedAt).sort().at(-1) ?? null
+      };
+    });
+  }
   await migrate();
   const rows = await sql()`
     SELECT chat_id, COUNT(*)::int AS total, MAX(updated_at) AS latest_activity_at
@@ -323,6 +489,9 @@ export async function getKnownChats(): Promise<Array<{ chatId: string; total: nu
 }
 
 export async function getRange(chatId: string, startIso: string, endIso: string): Promise<Reminder[]> {
+  if (isMemoryDb()) {
+    return memoryByChat(chatId).filter((reminder) => reminder.dueAt >= startIso && reminder.dueAt <= endIso);
+  }
   await migrate();
   const rows = await sql()`
     SELECT * FROM reminders
@@ -368,12 +537,14 @@ export async function getWeekRemindersByChatId(chatId: string, now = new Date())
 }
 
 export async function getRecurringRemindersByChatId(chatId: string): Promise<Reminder[]> {
+  if (isMemoryDb()) return memoryByChat(chatId).filter((reminder) => reminder.recurrenceType);
   await migrate();
   const rows = await sql()`SELECT * FROM reminders WHERE chat_id = ${chatId} AND recurrence_type IS NOT NULL ORDER BY due_at ASC` as ReminderRow[];
   return rows.map(mapReminder);
 }
 
 export async function getOverdueRemindersByChatId(chatId: string, nowIso = localIso()): Promise<Reminder[]> {
+  if (isMemoryDb()) return memoryByChat(chatId).filter((reminder) => reminder.status === "pending" && reminder.dueAt < nowIso);
   await migrate();
   const rows = await sql()`
     SELECT * FROM reminders
@@ -386,6 +557,15 @@ export async function getOverdueRemindersByChatId(chatId: string, nowIso = local
 }
 
 export async function searchRemindersByChatId(chatId: string, query: string): Promise<Reminder[]> {
+  if (isMemoryDb()) {
+    const normalized = normalizeHebrewText(query);
+    return memoryByChat(chatId).filter((reminder) =>
+      reminder.normalizedTask.includes(normalized) ||
+      reminder.task.includes(query) ||
+      reminder.category.includes(query) ||
+      reminder.priority.includes(query as ReminderPriority)
+    );
+  }
   await migrate();
   const normalized = `%${normalizeHebrewText(query)}%`;
   const raw = `%${query}%`;
@@ -398,6 +578,14 @@ export async function searchRemindersByChatId(chatId: string, query: string): Pr
 }
 
 export async function markReminderDone(chatId: string, id: number): Promise<boolean> {
+  if (isMemoryDb()) {
+    const updated = memorySet(id, chatId, { status: "done", sendingAt: null, nextFollowupAt: null, completedAt: formatIsraelLocalIso() });
+    if (updated) {
+      memoryEvent(id, chatId, "completed");
+      memoryEvent(id, chatId, "followup_stopped_done");
+    }
+    return Boolean(updated);
+  }
   await migrate();
   const rows = await sql()`
     UPDATE reminders
@@ -413,6 +601,14 @@ export async function markReminderDone(chatId: string, id: number): Promise<bool
 }
 
 export async function cancelReminder(chatId: string, id: number): Promise<boolean> {
+  if (isMemoryDb()) {
+    const updated = memorySet(id, chatId, { status: "cancelled", sendingAt: null, nextFollowupAt: null, cancelledAt: formatIsraelLocalIso() });
+    if (updated) {
+      memoryEvent(id, chatId, "cancelled");
+      memoryEvent(id, chatId, "followup_stopped_cancelled");
+    }
+    return Boolean(updated);
+  }
   await migrate();
   const rows = await sql()`
     UPDATE reminders
@@ -428,6 +624,13 @@ export async function cancelReminder(chatId: string, id: number): Promise<boolea
 }
 
 export async function deleteReminder(chatId: string, id: number): Promise<boolean> {
+  if (isMemoryDb()) {
+    const index = memoryState.reminders.findIndex((reminder) => reminder.id === id && reminder.chatId === chatId);
+    if (index < 0) return false;
+    const [removed] = memoryState.reminders.splice(index, 1);
+    memoryEvent(id, chatId, "deleted", { task: removed.task, previousStatus: removed.status });
+    return true;
+  }
   await migrate();
   const rows = await sql()`
     DELETE FROM reminders
@@ -441,6 +644,20 @@ export async function deleteReminder(chatId: string, id: number): Promise<boolea
 }
 
 export async function snoozeReminder(chatId: string, id: number, snoozeUntil: string): Promise<Reminder | null> {
+  if (isMemoryDb()) {
+    const existing = memoryState.reminders.find((reminder) => reminder.id === id && reminder.chatId === chatId && ["pending", "sending", "notified"].includes(reminder.status));
+    if (!existing) return null;
+    const updated = memorySet(id, chatId, {
+      dueAt: snoozeUntil,
+      status: "pending",
+      sendingAt: null,
+      nextFollowupAt: null,
+      lastSnoozedAt: formatIsraelLocalIso(),
+      snoozeCount: existing.snoozeCount + 1
+    });
+    memoryEvent(id, chatId, "snoozed", { snoozeUntil });
+    return updated;
+  }
   await migrate();
   const rows = await sql()`
     UPDATE reminders
@@ -455,6 +672,21 @@ export async function snoozeReminder(chatId: string, id: number, snoozeUntil: st
 }
 
 export async function updateReminder(chatId: string, id: number, updates: Partial<Pick<Reminder, "task" | "dueAt" | "status" | "category" | "priority">>): Promise<Reminder | null> {
+  if (isMemoryDb()) {
+    const existing = memoryState.reminders.find((reminder) => reminder.id === id && reminder.chatId === chatId);
+    if (!existing) return null;
+    const task = updates.task ?? existing.task;
+    const updated = memorySet(id, chatId, {
+      task,
+      normalizedTask: normalizeHebrewText(task),
+      category: updates.category ?? existing.category,
+      priority: updates.priority ?? existing.priority,
+      dueAt: updates.dueAt ?? existing.dueAt,
+      status: updates.status ?? existing.status
+    });
+    memoryEvent(id, chatId, "edited", updates);
+    return updated;
+  }
   const existing = await getReminderById(id);
   if (!existing || existing.chatId !== chatId) return null;
   const task = updates.task ?? existing.task;
@@ -472,6 +704,7 @@ export async function updateReminder(chatId: string, id: number, updates: Partia
 }
 
 export async function getReminderEventsByChatId(chatId: string, limit = 100): Promise<ReminderEvent[]> {
+  if (isMemoryDb()) return memoryState.events.filter((event) => event.chatId === chatId).slice(0, limit).map((event) => ({ ...event }));
   await migrate();
   const rows = await sql()`SELECT * FROM reminder_events WHERE chat_id = ${chatId} ORDER BY created_at DESC LIMIT ${limit}` as Array<{
     id: number;
@@ -485,6 +718,32 @@ export async function getReminderEventsByChatId(chatId: string, limit = 100): Pr
 }
 
 export async function getStatsByChatId(chatId: string, now = new Date()): Promise<ReminderStats> {
+  if (isMemoryDb()) {
+    const reminders = memoryByChat(chatId);
+    const todayIds = new Set((await getTodayRemindersByChatId(chatId, now)).map((reminder) => reminder.id));
+    const tomorrowIds = new Set((await getTomorrowRemindersByChatId(chatId, now)).map((reminder) => reminder.id));
+    const weekIds = new Set((await getWeekRemindersByChatId(chatId, now)).map((reminder) => reminder.id));
+    const active = reminders.filter((reminder) => reminder.status === "pending" || reminder.status === "sending" || reminder.status === "notified");
+    return {
+      totalActive: active.length,
+      dueToday: reminders.filter((reminder) => todayIds.has(reminder.id)).length,
+      dueTomorrow: reminders.filter((reminder) => tomorrowIds.has(reminder.id)).length,
+      dueThisWeek: reminders.filter((reminder) => weekIds.has(reminder.id)).length,
+      recurring: reminders.filter((reminder) => reminder.recurrenceType).length,
+      notified: reminders.filter((reminder) => reminder.status === "notified").length,
+      done: reminders.filter((reminder) => reminder.status === "done").length,
+      cancelled: reminders.filter((reminder) => reminder.status === "cancelled").length,
+      overdue: (await getOverdueRemindersByChatId(chatId, localIso(now))).length,
+      categories: active.reduce<Record<string, number>>((acc, reminder) => {
+        acc[reminder.category] = (acc[reminder.category] ?? 0) + 1;
+        return acc;
+      }, {}),
+      priorities: active.reduce<Record<ReminderPriority, number>>((acc, reminder) => {
+        acc[reminder.priority] += 1;
+        return acc;
+      }, { נמוך: 0, רגיל: 0, חשוב: 0, דחוף: 0 })
+    };
+  }
   const reminders = await getRemindersByChatId(chatId);
   const todayIds = new Set((await getTodayRemindersByChatId(chatId, now)).map((reminder) => reminder.id));
   const tomorrowIds = new Set((await getTomorrowRemindersByChatId(chatId, now)).map((reminder) => reminder.id));
@@ -515,6 +774,27 @@ export async function getStatsByChatId(chatId: string, now = new Date()): Promis
 }
 
 export async function importReminders(chatId: string, reminders: unknown[]): Promise<{ imported: Reminder[]; errors: string[] }> {
+  if (isMemoryDb()) {
+    const imported: Reminder[] = [];
+    const errors: string[] = [];
+    for (const [index, item] of reminders.entries()) {
+      const reminder = item as Partial<ParsedReminder>;
+      if (!reminder || typeof reminder.task !== "string" || typeof reminder.dueAt !== "string") {
+        errors.push(`פריט ${index + 1}: חסרים task או dueAt`);
+        continue;
+      }
+      imported.push(memoryCreateReminder(chatId, {
+        task: reminder.task,
+        dueAt: reminder.dueAt,
+        recurrence: (reminder.recurrence as Recurrence | null | undefined) ?? null,
+        sourceText: reminder.sourceText,
+        category: typeof reminder.category === "string" ? reminder.category : undefined,
+        priority: reminder.priority
+      }));
+    }
+    memoryEvent(null, chatId, "imported", { imported: imported.length, errors: errors.length });
+    return { imported, errors };
+  }
   const imported: Reminder[] = [];
   const errors: string[] = [];
   for (const [index, item] of reminders.entries()) {
@@ -549,6 +829,13 @@ export async function importReminders(chatId: string, reminders: unknown[]): Pro
 }
 
 export async function claimDueReminder(nowIso: string): Promise<Reminder | null> {
+  if (isMemoryDb()) {
+    const reminder = memoryState.reminders
+      .filter((item) => item.status === "pending" && item.dueAt <= nowIso)
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
+    if (!reminder) return null;
+    return memorySet(reminder.id, reminder.chatId, { status: "sending", sendingAt: formatIsraelLocalIso() });
+  }
   await migrate();
   const rows = await sql()`
     UPDATE reminders
@@ -567,11 +854,29 @@ export async function claimDueReminder(nowIso: string): Promise<Reminder | null>
 }
 
 export async function releaseReminderAfterSendFailure(id: number): Promise<void> {
+  if (isMemoryDb()) {
+    const reminder = memoryState.reminders.find((item) => item.id === id && item.status === "sending");
+    if (reminder) memorySet(reminder.id, reminder.chatId, { status: "pending", sendingAt: null });
+    return;
+  }
   await migrate();
   await sql()`UPDATE reminders SET status = 'pending', sending_at = NULL, updated_at = NOW() WHERE id = ${id} AND status = 'sending'`;
 }
 
 export async function markReminderNotifiedAfterSend(reminder: Reminder): Promise<boolean> {
+  if (isMemoryDb()) {
+    const nextFollowupAt = nextFollowupIso();
+    const updated = memorySet(reminder.id, reminder.chatId, {
+      status: "notified",
+      sentAt: formatIsraelLocalIso(),
+      sendingAt: null,
+      nextFollowupAt,
+      followupCount: 0,
+      lastFollowupAt: null
+    });
+    if (updated) memoryEvent(reminder.id, reminder.chatId, "sent", { dueAt: reminder.dueAt });
+    return Boolean(updated);
+  }
   await migrate();
   const nextFollowupAt = nextFollowupIso();
   const rows = await sql()`
@@ -587,6 +892,14 @@ export async function markReminderNotifiedAfterSend(reminder: Reminder): Promise
 }
 
 export async function deferReminderFollowup(chatId: string, id: number): Promise<boolean> {
+  if (isMemoryDb()) {
+    const nextFollowupAt = nextFollowupIso();
+    const existing = memoryState.reminders.find((reminder) => reminder.id === id && reminder.chatId === chatId && reminder.status === "notified");
+    if (!existing) return false;
+    memorySet(id, chatId, { nextFollowupAt });
+    memoryEvent(id, chatId, "followup_skipped", { nextFollowupAt });
+    return true;
+  }
   await migrate();
   const nextFollowupAt = nextFollowupIso();
   const rows = await sql()`
@@ -600,6 +913,13 @@ export async function deferReminderFollowup(chatId: string, id: number): Promise
 }
 
 export async function claimDueFollowupReminder(nowIso: string, maxFollowups = MAX_FOLLOWUPS): Promise<Reminder | null> {
+  if (isMemoryDb()) {
+    const reminder = memoryState.reminders
+      .filter((item) => item.status === "notified" && item.nextFollowupAt && item.nextFollowupAt <= nowIso && !item.sendingAt && item.followupCount < maxFollowups)
+      .sort((a, b) => (a.nextFollowupAt ?? "").localeCompare(b.nextFollowupAt ?? ""))[0];
+    if (!reminder) return null;
+    return memorySet(reminder.id, reminder.chatId, { sendingAt: formatIsraelLocalIso() });
+  }
   await migrate();
   const rows = await sql()`
     UPDATE reminders
@@ -621,6 +941,10 @@ export async function claimDueFollowupReminder(nowIso: string, maxFollowups = MA
 }
 
 export async function releaseFollowupAfterSendFailure(reminder: Reminder): Promise<void> {
+  if (isMemoryDb()) {
+    memorySet(reminder.id, reminder.chatId, { sendingAt: null });
+    return;
+  }
   await migrate();
   await sql()`
     UPDATE reminders
@@ -630,6 +954,19 @@ export async function releaseFollowupAfterSendFailure(reminder: Reminder): Promi
 }
 
 export async function markFollowupSent(reminder: Reminder, maxFollowups = MAX_FOLLOWUPS): Promise<boolean> {
+  if (isMemoryDb()) {
+    const nextCount = reminder.followupCount + 1;
+    const nextFollowupAt = nextCount >= maxFollowups ? null : nextFollowupIso();
+    const updated = memorySet(reminder.id, reminder.chatId, {
+      followupCount: nextCount,
+      lastFollowupAt: formatIsraelLocalIso(),
+      nextFollowupAt,
+      sendingAt: null
+    });
+    if (updated) memoryEvent(reminder.id, reminder.chatId, "followup_sent", { followupCount: nextCount, nextFollowupAt });
+    if (updated && !nextFollowupAt) memoryEvent(reminder.id, reminder.chatId, "followup_skipped", { reason: "max_followups", maxFollowups });
+    return Boolean(updated);
+  }
   await migrate();
   const nextCount = reminder.followupCount + 1;
   const nextFollowupAt = nextCount >= maxFollowups ? null : nextFollowupIso();
@@ -647,6 +984,14 @@ export async function markFollowupSent(reminder: Reminder, maxFollowups = MAX_FO
 }
 
 export async function clearMaxedFollowups(maxFollowups = MAX_FOLLOWUPS): Promise<number> {
+  if (isMemoryDb()) {
+    const rows = memoryState.reminders.filter((reminder) => reminder.status === "notified" && reminder.nextFollowupAt && reminder.followupCount >= maxFollowups);
+    for (const reminder of rows) {
+      memorySet(reminder.id, reminder.chatId, { nextFollowupAt: null });
+      memoryEvent(reminder.id, reminder.chatId, "followup_skipped", { reason: "max_followups", maxFollowups });
+    }
+    return rows.length;
+  }
   await migrate();
   const rows = await sql()`
     UPDATE reminders
@@ -668,6 +1013,19 @@ export async function rescheduleRecurringReminder(reminder: Reminder): Promise<R
     month: reminder.recurrenceMonth ?? undefined,
     time: reminder.recurrenceTime
   });
+  if (isMemoryDb()) {
+    const updated = memorySet(reminder.id, reminder.chatId, {
+      dueAt: nextDueAt,
+      status: "pending",
+      sentAt: formatIsraelLocalIso(),
+      sendingAt: null,
+      nextFollowupAt: null
+    });
+    memoryEvent(reminder.id, reminder.chatId, "sent", { dueAt: reminder.dueAt });
+    memoryEvent(reminder.id, reminder.chatId, "rescheduled", { nextDueAt });
+    if (!updated) throw new Error(`Reminder ${reminder.id} was not found`);
+    return updated;
+  }
   await migrate();
   const rows = await sql()`
     UPDATE reminders
@@ -682,6 +1040,17 @@ export async function rescheduleRecurringReminder(reminder: Reminder): Promise<R
 }
 
 export async function recoverStaleSendingReminders(cutoffIso?: string): Promise<number> {
+  if (isMemoryDb()) {
+    const cutoff = cutoffIso ?? formatIsraelLocalIso(new Date(Date.now() - 5 * 60_000));
+    const rows = memoryState.reminders.filter((reminder) =>
+      (reminder.status === "sending" || reminder.status === "notified") && reminder.sendingAt && reminder.sendingAt < cutoff
+    );
+    for (const reminder of rows) {
+      memorySet(reminder.id, reminder.chatId, reminder.status === "sending" ? { status: "pending", sendingAt: null } : { sendingAt: null });
+      memoryEvent(reminder.id, reminder.chatId, "send_recovered", { cutoffIso: cutoff });
+    }
+    return rows.length;
+  }
   await migrate();
   const cutoff = cutoffIso ?? new Date(Date.now() - 5 * 60_000).toISOString();
   const dueRows = await sql()`UPDATE reminders SET status = 'pending', sending_at = NULL, updated_at = NOW() WHERE status = 'sending' AND sending_at < ${cutoff} RETURNING id, chat_id` as Array<{ id: number; chat_id: string }>;

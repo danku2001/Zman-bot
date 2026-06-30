@@ -7,7 +7,7 @@ on:
     branches: [main]
 
 jobs:
-  test:
+  qa:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
@@ -16,17 +16,25 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: 22
+          node-version: 20
           cache: npm
 
       - name: Install dependencies
-        run: npm install
+        run: |
+          if [ -f package-lock.json ]; then
+            npm ci
+          else
+            npm install
+          fi
 
-      - name: Run tests
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
         run: npm run test
 
-      - name: Run lint
-        run: npm run lint
+      - name: Security checks
+        run: npm run test:security
 
       - name: Build
         run: npm run build

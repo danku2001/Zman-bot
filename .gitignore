@@ -4,6 +4,7 @@ dist
 .env
 .DS_Store
 *.log
+logs
 secrets
 secrets.*
 *.secret
