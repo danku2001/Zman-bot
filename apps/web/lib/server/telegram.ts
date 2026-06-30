@@ -21,6 +21,15 @@ ensureAppTimeZone();
 type TelegramMessage = { message_id: number; chat: { id: number | string }; text?: string };
 type TelegramCallback = { id: string; data?: string; message?: TelegramMessage };
 export type TelegramUpdate = { update_id: number; message?: TelegramMessage; callback_query?: TelegramCallback };
+export type TelegramFailure = {
+  method: string;
+  status: number;
+  description: string;
+  chat_id: string;
+  at: string;
+};
+
+let latestTelegramFailure: TelegramFailure | null = null;
 
 function token(): string {
   if (!process.env.TELEGRAM_BOT_TOKEN) throw new Error("TELEGRAM_BOT_TOKEN is required");
@@ -36,12 +45,23 @@ async function telegram(method: string, body: unknown): Promise<void> {
   const data = await response.json().catch(() => ({})) as { ok?: boolean; description?: string };
   if (!response.ok || !data.ok) {
     const chatId = typeof body === "object" && body && "chat_id" in body ? String((body as { chat_id?: unknown }).chat_id) : "unknown";
-    throw new Error(`Telegram ${method} failed with ${response.status}${data.description ? `: ${data.description}` : ""} (chat_id=${chatId})`);
+    latestTelegramFailure = {
+      method,
+      status: response.status,
+      description: data.description ?? "Telegram API returned ok=false",
+      chat_id: chatId,
+      at: nowUtcIso()
+    };
+    throw new Error(`Telegram ${method} failed with ${latestTelegramFailure.status}: ${latestTelegramFailure.description} (chat_id=${chatId})`);
   }
 }
 
 export async function sendMessage(chatId: string, text: string, replyMarkup?: unknown): Promise<void> {
   await telegram("sendMessage", { chat_id: chatId, text, reply_markup: replyMarkup });
+}
+
+export function getLatestTelegramFailure(): TelegramFailure | null {
+  return latestTelegramFailure;
 }
 
 async function sendBestEffort(chatId: string, text: string, replyMarkup?: unknown): Promise<boolean> {

@@ -7,10 +7,20 @@ import { isSchedulerAuthorized } from "./scheduler-auth";
 import { GET as healthGet } from "../../app/api/health/route";
 import { GET as schedulerGet } from "../../app/api/scheduler/run/route";
 import { GET as schedulerDebugGet } from "../../app/api/debug/scheduler/route";
+import { GET as deliveryDebugGet } from "../../app/api/debug/delivery/route";
+import { POST as telegramSendPost } from "../../app/api/debug/telegram-send/route";
 import { POST as webhookPost } from "../../app/api/telegram/webhook/route";
 
 function request(path: string, headers?: HeadersInit): NextRequest {
   return new NextRequest(`https://zmanbot.test${path}`, { headers });
+}
+
+function postRequest(path: string, body: unknown, headers?: HeadersInit): NextRequest {
+  return new NextRequest(`https://zmanbot.test${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(headers ?? {}) },
+    body: JSON.stringify(body)
+  });
 }
 
 test("dashboard api access returns 401 with no API_SECRET and no dashboard cookie", () => {
@@ -72,6 +82,49 @@ test("scheduler debug still requires CRON_SECRET", async () => {
 
   assert.equal(missing.status, 401);
   assert.equal(wrong.status, 401);
+});
+
+test("delivery debug requires CRON_SECRET", async () => {
+  process.env.CRON_SECRET = "cron-secret";
+
+  const missing = await deliveryDebugGet(request("/api/debug/delivery"));
+  const wrong = await deliveryDebugGet(request("/api/debug/delivery?secret=wrong"));
+
+  assert.equal(missing.status, 401);
+  assert.equal(wrong.status, 401);
+});
+
+test("telegram send debug requires CRON_SECRET", async () => {
+  process.env.CRON_SECRET = "cron-secret";
+
+  const missing = await telegramSendPost(postRequest("/api/debug/telegram-send", { chat_id: "123" }));
+  const wrong = await telegramSendPost(postRequest("/api/debug/telegram-send?secret=wrong", { chat_id: "123" }));
+
+  assert.equal(missing.status, 401);
+  assert.equal(wrong.status, 401);
+});
+
+test("telegram send debug sends with valid CRON_SECRET", async () => {
+  process.env.CRON_SECRET = "cron-secret";
+  process.env.TELEGRAM_BOT_TOKEN = "test-token";
+  const previousFetch = global.fetch;
+  const sentBodies: unknown[] = [];
+  global.fetch = (async (_url, init) => {
+    sentBodies.push(JSON.parse(String(init?.body)));
+    return new Response(JSON.stringify({ ok: true, result: { message_id: 1 } }), { status: 200 });
+  }) as typeof fetch;
+
+  try {
+    const response = await telegramSendPost(postRequest("/api/debug/telegram-send?secret=cron-secret", { chat_id: "123" }));
+    const body = await response.json() as { ok: boolean; telegramStatus: string };
+
+    assert.equal(response.status, 200);
+    assert.equal(body.ok, true);
+    assert.equal(body.telegramStatus, "sent");
+    assert.deepEqual(sentBodies[0], { chat_id: "123", text: "בדיקת שליחה מ-ZmanBot ✅" });
+  } finally {
+    global.fetch = previousFetch;
+  }
 });
 
 test("scheduler run accepts cron-job compatible secret formats", async () => {

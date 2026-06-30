@@ -138,6 +138,22 @@ https://YOUR_VERCEL_DOMAIN/api/scheduler/run?secret=CRON_SECRET
 7. שמרו והפעילו.
 8. ודאו שה-job פעיל ומחזיר HTTP 200. אם הוא מחזיר 401, ה-`CRON_SECRET` ב-URL לא תואם למה שמוגדר ב-Vercel.
 
+בדיקת delivery בטוחה:
+
+```text
+https://YOUR_VERCEL_DOMAIN/api/debug/delivery?secret=CRON_SECRET
+```
+
+בדיקת שליחה ישירה לטלגרם:
+
+```bash
+curl -X POST "https://YOUR_VERCEL_DOMAIN/api/debug/telegram-send?secret=CRON_SECRET" \
+  -H "Content-Type: application/json" \
+  -d '{"chat_id":"YOUR_TELEGRAM_CHAT_ID"}'
+```
+
+ה-endpoints האלה לא מחזירים secrets. הם מיועדים לבדוק אם הבעיה היא cron, בחירת reminders, chat_id, או Telegram API.
+
 תשובה תקינה:
 
 ```json

@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { calculateNextDueAt, normalizeHebrewText } from "./parser";
-import { ensureAppTimeZone, nowUtcIso, normalizeDatabaseTimestampToUtcIso, normalizeToUtcIso, wallClockDateToUtcIso, israelWallClockDate } from "./time";
+import { ensureAppTimeZone, nowUtcIso, normalizeDatabaseTimestampToUtcIso, normalizeToUtcIso, wallClockDateToUtcIso, israelWallClockDate, formatUtcIsoForIsrael } from "./time";
 import type { ParsedReminder, Recurrence, ReminderPriority, ReminderStatus, RecurrenceType } from "./types";
 import type { Reminder, ReminderEvent, ReminderStats } from "../types";
 
@@ -777,6 +777,95 @@ export async function getSchedulerDebugSnapshot(nowIso = nowUtcIso()): Promise<{
   };
 }
 
+export async function getDeliveryDebugSnapshot(nowIso = nowUtcIso()): Promise<{
+  pendingCount: number;
+  duePendingCount: number;
+  duePendingMissingChatIdCount: number;
+  sendingStuckCount: number;
+  latestPendingReminders: Array<{
+    id: number;
+    chat_id: string;
+    task: string;
+    due_at: string;
+    due_at_israel: string | null;
+    status: ReminderStatus;
+    isDue: boolean;
+  }>;
+  latestReminderEvents: Array<Pick<ReminderEvent, "id" | "reminderId" | "chatId" | "eventType" | "payload" | "createdAt">>;
+}> {
+  const normalizedNow = requireUtcIso(nowIso, "nowIso");
+  const stuckCutoff = nowUtcIso(new Date(Date.now() - 5 * 60_000));
+  if (isMemoryDb()) {
+    const pending = memoryState.reminders
+      .filter((reminder) => reminder.status === "pending")
+      .sort((a, b) => a.dueAt.localeCompare(b.dueAt));
+    const duePending = pending.filter((reminder) => reminder.dueAt <= normalizedNow);
+    const stuck = memoryState.reminders.filter((reminder) => reminder.status === "sending" && reminder.sendingAt && reminder.sendingAt < stuckCutoff);
+    return {
+      pendingCount: pending.length,
+      duePendingCount: duePending.filter((reminder) => reminder.chatId.trim()).length,
+      duePendingMissingChatIdCount: duePending.filter((reminder) => !reminder.chatId.trim()).length,
+      sendingStuckCount: stuck.length,
+      latestPendingReminders: pending.slice(0, 10).map((reminder) => ({
+        id: reminder.id,
+        chat_id: reminder.chatId,
+        task: reminder.task,
+        due_at: reminder.dueAt,
+        due_at_israel: formatUtcIsoForIsrael(reminder.dueAt),
+        status: reminder.status,
+        isDue: reminder.dueAt <= normalizedNow
+      })),
+      latestReminderEvents: memoryState.events
+        .slice(-20)
+        .reverse()
+        .map((event) => ({ id: event.id, reminderId: event.reminderId, chatId: event.chatId, eventType: event.eventType, payload: event.payload, createdAt: event.createdAt }))
+    };
+  }
+  await migrate();
+  const pendingRows = await sql()`SELECT COUNT(*)::int AS count FROM reminders WHERE status = 'pending'` as Array<{ count: number }>;
+  const dueRows = await sql()`SELECT COUNT(*)::int AS count FROM reminders WHERE status = 'pending' AND due_at <= ${normalizedNow}::timestamptz AND NULLIF(TRIM(chat_id), '') IS NOT NULL` as Array<{ count: number }>;
+  const missingChatRows = await sql()`SELECT COUNT(*)::int AS count FROM reminders WHERE status = 'pending' AND due_at <= ${normalizedNow}::timestamptz AND NULLIF(TRIM(chat_id), '') IS NULL` as Array<{ count: number }>;
+  const stuckRows = await sql()`SELECT COUNT(*)::int AS count FROM reminders WHERE status = 'sending' AND sending_at < ${stuckCutoff}` as Array<{ count: number }>;
+  const reminderRows = await sql()`
+    SELECT * FROM reminders
+    WHERE status = 'pending'
+    ORDER BY due_at ASC
+    LIMIT 10
+  ` as ReminderRow[];
+  const eventRows = await sql()`
+    SELECT id, reminder_id, chat_id, event_type, payload, created_at
+    FROM reminder_events
+    ORDER BY created_at DESC
+    LIMIT 20
+  ` as Array<{ id: number; reminder_id: number | null; chat_id: string; event_type: string; payload: string | null; created_at: string }>;
+  return {
+    pendingCount: pendingRows[0]?.count ?? 0,
+    duePendingCount: dueRows[0]?.count ?? 0,
+    duePendingMissingChatIdCount: missingChatRows[0]?.count ?? 0,
+    sendingStuckCount: stuckRows[0]?.count ?? 0,
+    latestPendingReminders: reminderRows.map((row) => {
+      const reminder = mapReminder(row);
+      return {
+        id: reminder.id,
+        chat_id: reminder.chatId,
+        task: reminder.task,
+        due_at: reminder.dueAt,
+        due_at_israel: formatUtcIsoForIsrael(reminder.dueAt),
+        status: reminder.status,
+        isDue: reminder.dueAt <= normalizedNow
+      };
+    }),
+    latestReminderEvents: eventRows.map(mapEvent).map((event) => ({
+      id: event.id,
+      reminderId: event.reminderId,
+      chatId: event.chatId,
+      eventType: event.eventType,
+      payload: event.payload,
+      createdAt: event.createdAt
+    }))
+  };
+}
+
 export async function getStatsByChatId(chatId: string, now = new Date()): Promise<ReminderStats> {
   if (isMemoryDb()) {
     const reminders = memoryByChat(chatId);
@@ -891,7 +980,7 @@ export async function importReminders(chatId: string, reminders: unknown[]): Pro
 export async function claimDueReminder(nowIso: string): Promise<Reminder | null> {
   if (isMemoryDb()) {
     const reminder = memoryState.reminders
-      .filter((item) => item.status === "pending" && item.dueAt <= nowIso)
+      .filter((item) => item.status === "pending" && item.chatId.trim() && item.dueAt <= nowIso)
       .sort((a, b) => a.dueAt.localeCompare(b.dueAt))[0];
     if (!reminder) return null;
     return memorySet(reminder.id, reminder.chatId, { status: "sending", sendingAt: nowUtcIso() });
@@ -904,6 +993,7 @@ export async function claimDueReminder(nowIso: string): Promise<Reminder | null>
       SELECT id FROM reminders
       WHERE status = 'pending'
         AND due_at <= ${requireUtcIso(nowIso, "nowIso")}::timestamptz
+        AND NULLIF(TRIM(chat_id), '') IS NOT NULL
       ORDER BY due_at ASC
       LIMIT 1
       FOR UPDATE SKIP LOCKED

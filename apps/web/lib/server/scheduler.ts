@@ -15,6 +15,22 @@ import { ensureAppTimeZone, formatHebrewWallClock, nowUtcIso } from "./time";
 
 ensureAppTimeZone();
 
+export type SchedulerResult = {
+  ok: true;
+  sent: number;
+  recovered: number;
+  failed: number;
+  durationMs: number;
+  checkedAtUtc: string;
+  checkedAtIsrael: string;
+  dueCountBefore: number;
+  claimedIds: number[];
+  failureReasons: string[];
+  selectionNote: string;
+};
+
+let lastSchedulerResult: SchedulerResult | null = null;
+
 function completionKeyboard(id: number) {
   return {
     inline_keyboard: [
@@ -30,18 +46,7 @@ function completionKeyboard(id: number) {
   };
 }
 
-export async function runSchedulerOnce(limit = 25): Promise<{
-  ok: true;
-  sent: number;
-  recovered: number;
-  failed: number;
-  durationMs: number;
-  checkedAtUtc: string;
-  checkedAtIsrael: string;
-  dueCountBefore: number;
-  claimedIds: number[];
-  failureReasons: string[];
-}> {
+export async function runSchedulerOnce(limit = 25): Promise<SchedulerResult> {
   const startedAt = Date.now();
   const checkedAtUtc = nowUtcIso();
   const checkedAtIsrael = formatHebrewWallClock(checkedAtUtc, checkedAtUtc, "medium");
@@ -94,5 +99,16 @@ export async function runSchedulerOnce(limit = 25): Promise<{
     }
   }
 
-  return { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt, checkedAtUtc, checkedAtIsrael, dueCountBefore, claimedIds, failureReasons };
+  const selectionNote =
+    dueCountBefore === 0
+      ? "No pending reminders were due at checkedAtUtc."
+      : claimedIds.length === 0
+        ? "Due reminders existed before the run, but none were claimed. Check missing chat_id, locks, or status mismatch."
+        : "Due reminders were claimed and processed.";
+  lastSchedulerResult = { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt, checkedAtUtc, checkedAtIsrael, dueCountBefore, claimedIds, failureReasons, selectionNote };
+  return lastSchedulerResult;
+}
+
+export function getLastSchedulerResult(): SchedulerResult | null {
+  return lastSchedulerResult;
 }
