@@ -1,4 +1,10 @@
 {
+  "crons": [
+    {
+      "path": "/api/scheduler/run",
+      "schedule": "* * * * *"
+    }
+  ],
   "functions": {
     "app/api/scheduler/run/route.ts": {
       "maxDuration": 30

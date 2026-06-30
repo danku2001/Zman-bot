@@ -92,6 +92,14 @@ test("scheduler run accepts cron-job compatible secret formats", async () => {
   assert.equal(headerSecret, true);
 });
 
+test("scheduler run accepts Vercel Cron user agent", () => {
+  process.env.CRON_SECRET = "cron-secret";
+
+  const ok = isSchedulerAuthorized(request("/api/scheduler/run", { "user-agent": "vercel-cron/1.0" }));
+
+  assert.equal(ok, true);
+});
+
 test("scheduler run accepts valid dashboard cookie for manual diagnostics", () => {
   process.env.CRON_SECRET = "cron-secret";
   process.env.DASHBOARD_PASSWORD = "dashboard-password";

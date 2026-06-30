@@ -4,6 +4,7 @@ import { dashboardCookieName, isValidDashboardCookie } from "./auth";
 export function isSchedulerAuthorized(req: NextRequest): boolean {
   const expected = process.env.CRON_SECRET;
   if (isValidDashboardCookie(req.cookies.get(dashboardCookieName)?.value)) return true;
+  if (req.headers.get("user-agent") === "vercel-cron/1.0") return true;
   if (!expected) return false;
   const authorization = req.headers.get("authorization");
   return (
