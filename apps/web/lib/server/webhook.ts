@@ -23,7 +23,11 @@ export async function handleTelegramWebhookUpdate(update: TelegramUpdate, deps: 
   if (!claimed) return { ok: true, duplicate: true };
   try {
     await processUpdate(update);
-    await markProcessed(updateId);
+    try {
+      await markProcessed(updateId);
+    } catch (error) {
+      console.error("Telegram webhook processed but failed to mark update processed", error instanceof Error ? error.message : "Unknown error");
+    }
   } catch (error) {
     await markFailed(updateId, error instanceof Error ? error.message : "Unknown webhook error");
     throw error;

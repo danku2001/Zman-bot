@@ -113,6 +113,32 @@ test("failed processing marks update failed and rethrows for Telegram retry", as
   assert.equal(failedError, "telegram temporary failure");
 });
 
+test("processed update does not return 500 when processed marker write fails", async () => {
+  let processed = 0;
+  let failed = 0;
+  const update: TelegramUpdate = {
+    update_id: 1001,
+    message: { message_id: 1, chat: { id: "chat-1" }, text: "תזכיר לי עוד חמש דקות לבדוק" }
+  };
+
+  const result = await handleTelegramWebhookUpdate(update, {
+    claimUpdate: async () => true,
+    markProcessed: async () => {
+      throw new Error("processed marker write failed");
+    },
+    markFailed: async () => {
+      failed += 1;
+    },
+    processUpdate: async () => {
+      processed += 1;
+    }
+  });
+
+  assert.deepEqual(result, { ok: true, duplicate: false });
+  assert.equal(processed, 1);
+  assert.equal(failed, 0);
+});
+
 test("Telegram webhook route returns 500 when processing throws so Telegram retries", async () => {
   const req = new Request("https://example.test/api/telegram/webhook", {
     method: "POST",

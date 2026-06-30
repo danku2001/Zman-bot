@@ -223,8 +223,12 @@ export async function markTelegramUpdateFailed(updateId: string, error: string):
 }
 
 async function addEvent(reminderId: number | null, chatId: string, eventType: string, payload?: unknown): Promise<void> {
-  await migrate();
-  await sql()`INSERT INTO reminder_events (reminder_id, chat_id, event_type, payload) VALUES (${reminderId}, ${chatId}, ${eventType}, ${payload ? JSON.stringify(payload) : null})`;
+  try {
+    await migrate();
+    await sql()`INSERT INTO reminder_events (reminder_id, chat_id, event_type, payload) VALUES (${reminderId}, ${chatId}, ${eventType}, ${payload ? JSON.stringify(payload) : null})`;
+  } catch (error) {
+    console.error("Reminder event logging failed", error instanceof Error ? error.message : "Unknown event logging error");
+  }
 }
 
 export async function createReminder(chatId: string, parsed: ParsedReminder): Promise<Reminder> {
