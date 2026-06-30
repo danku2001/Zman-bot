@@ -51,8 +51,8 @@ export function parseIsraelWallClockToUtcIso(value: string): string | null {
 export function formatUtcIsoForIsrael(value: string | null | undefined): string | null {
   if (!value) return null;
   const trimmed = value.trim();
-  const date = /^\d{4}-\d{2}-\d{2}(?:[T\s]\d{2}:\d{2}(?::\d{2})?)?$/u.test(trimmed)
-    ? new Date(parseIsraelWallClockToUtcIso(trimmed) ?? "")
+  const date = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/u.test(trimmed)
+    ? new Date(`${trimmed.replace(" ", "T")}Z`)
     : new Date(trimmed);
   if (!Number.isFinite(date.getTime())) return null;
   return wallClockIsoFromParts(israelParts(date));
