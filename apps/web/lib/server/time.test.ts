@@ -6,6 +6,7 @@ import {
   formatUtcIsoForIsrael,
   israelWallClockDate,
   israelWallClockPartsToUtcIso,
+  normalizeDatabaseTimestampToUtcIso,
   parseIsraelWallClockToUtcIso
 } from "./time";
 
@@ -33,6 +34,12 @@ test("display of stored UTC 15:00 returns 18:00 Israel time", () => {
   assert.equal(formatUtcIsoForIsrael("2026-06-30T15:00:00.000Z"), "2026-06-30T18:00:00");
   const text = formatHebrewWallClock("2026-06-30T15:00:00.000Z");
   assert.match(text, /18:00/u);
+});
+
+test("database timestamp without timezone is treated as UTC, not Israel wall-clock", () => {
+  const utcIso = normalizeDatabaseTimestampToUtcIso("2026-06-30 15:00:00");
+  assert.equal(utcIso, "2026-06-30T15:00:00.000Z");
+  assert.equal(formatUtcIsoForIsrael(utcIso), "2026-06-30T18:00:00");
 });
 
 test("formats legacy wall-clock strings without timezone shifting", () => {

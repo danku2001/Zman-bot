@@ -89,6 +89,18 @@ export function normalizeToUtcIso(value: string | Date | null | undefined): stri
   return Number.isFinite(date.getTime()) ? date.toISOString() : null;
 }
 
+export function normalizeDatabaseTimestampToUtcIso(value: string | Date | null | undefined): string | null {
+  if (!value) return null;
+  if (value instanceof Date) return Number.isFinite(value.getTime()) ? value.toISOString() : null;
+  const trimmed = value.trim();
+  if (!trimmed) return null;
+  const normalized = /^\d{4}-\d{2}-\d{2}[T\s]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?$/u.test(trimmed)
+    ? `${trimmed.replace(" ", "T")}Z`
+    : trimmed;
+  const date = new Date(normalized);
+  return Number.isFinite(date.getTime()) ? date.toISOString() : null;
+}
+
 export function nowUtcIso(date = new Date()): string {
   const safeDate = Number.isFinite(date.getTime()) ? date : new Date();
   return safeDate.toISOString();

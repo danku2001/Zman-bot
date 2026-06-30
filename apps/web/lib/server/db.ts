@@ -1,6 +1,6 @@
 import { neon } from "@neondatabase/serverless";
 import { calculateNextDueAt, normalizeHebrewText } from "./parser";
-import { ensureAppTimeZone, nowUtcIso, normalizeToUtcIso, wallClockDateToUtcIso, israelWallClockDate } from "./time";
+import { ensureAppTimeZone, nowUtcIso, normalizeDatabaseTimestampToUtcIso, normalizeToUtcIso, wallClockDateToUtcIso, israelWallClockDate } from "./time";
 import type { ParsedReminder, Recurrence, ReminderPriority, ReminderStatus, RecurrenceType } from "./types";
 import type { Reminder, ReminderEvent, ReminderStats } from "../types";
 
@@ -48,7 +48,7 @@ function sql(): Sql {
 
 function toIso(value: unknown): string | null {
   if (!value) return null;
-  return normalizeToUtcIso(value instanceof Date ? value : String(value));
+  return normalizeDatabaseTimestampToUtcIso(value instanceof Date ? value : String(value));
 }
 
 function requireUtcIso(value: string | Date | null | undefined, field: string): string {
