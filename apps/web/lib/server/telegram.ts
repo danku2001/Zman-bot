@@ -28,6 +28,7 @@ export type TelegramFailure = {
   chat_id: string;
   at: string;
 };
+export type TelegramSendResult = { messageId: number | null };
 
 let latestTelegramFailure: TelegramFailure | null = null;
 
@@ -36,13 +37,13 @@ function token(): string {
   return process.env.TELEGRAM_BOT_TOKEN;
 }
 
-async function telegram(method: string, body: unknown): Promise<void> {
+async function telegram(method: string, body: unknown): Promise<TelegramSendResult> {
   const response = await fetch(`https://api.telegram.org/bot${token()}/${method}`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body)
   });
-  const data = await response.json().catch(() => ({})) as { ok?: boolean; description?: string };
+  const data = await response.json().catch(() => ({})) as { ok?: boolean; description?: string; result?: { message_id?: number } };
   if (!response.ok || !data.ok) {
     const chatId = typeof body === "object" && body && "chat_id" in body ? String((body as { chat_id?: unknown }).chat_id) : "unknown";
     latestTelegramFailure = {
@@ -54,10 +55,11 @@ async function telegram(method: string, body: unknown): Promise<void> {
     };
     throw new Error(`Telegram ${method} failed with ${latestTelegramFailure.status}: ${latestTelegramFailure.description} (chat_id=${chatId})`);
   }
+  return { messageId: typeof data.result?.message_id === "number" ? data.result.message_id : null };
 }
 
-export async function sendMessage(chatId: string, text: string, replyMarkup?: unknown): Promise<void> {
-  await telegram("sendMessage", { chat_id: chatId, text, reply_markup: replyMarkup });
+export async function sendMessage(chatId: string, text: string, replyMarkup?: unknown): Promise<TelegramSendResult> {
+  return await telegram("sendMessage", { chat_id: chatId, text, reply_markup: replyMarkup });
 }
 
 export function getLatestTelegramFailure(): TelegramFailure | null {

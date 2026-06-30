@@ -116,11 +116,12 @@ test("telegram send debug sends with valid CRON_SECRET", async () => {
 
   try {
     const response = await telegramSendPost(postRequest("/api/debug/telegram-send?secret=cron-secret", { chat_id: "123" }));
-    const body = await response.json() as { ok: boolean; telegramStatus: string };
+    const body = await response.json() as { ok: boolean; telegramStatus: string; messageId: number | null };
 
     assert.equal(response.status, 200);
     assert.equal(body.ok, true);
     assert.equal(body.telegramStatus, "sent");
+    assert.equal(body.messageId, 1);
     assert.deepEqual(sentBodies[0], { chat_id: "123", text: "בדיקת שליחה מ-ZmanBot ✅" });
   } finally {
     global.fetch = previousFetch;

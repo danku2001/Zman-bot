@@ -25,6 +25,7 @@ export type SchedulerResult = {
   checkedAtIsrael: string;
   dueCountBefore: number;
   claimedIds: number[];
+  telegramMessageIds: Array<{ reminderId: number; messageId: number | null; kind: "reminder" | "followup" | "recurrence_next" }>;
   failureReasons: string[];
   selectionNote: string;
 };
@@ -55,6 +56,7 @@ export async function runSchedulerOnce(limit = 25): Promise<SchedulerResult> {
   let sent = 0;
   let failed = 0;
   const claimedIds: number[] = [];
+  const telegramMessageIds: SchedulerResult["telegramMessageIds"] = [];
   const failureReasons: string[] = [];
 
   for (let i = 0; i < limit; i += 1) {
@@ -63,14 +65,16 @@ export async function runSchedulerOnce(limit = 25): Promise<SchedulerResult> {
     claimedIds.push(reminder.id);
     try {
       const isRecurring = Boolean(reminder.recurrenceType);
-      await sendMessage(
+      const sentReminder = await sendMessage(
         reminder.chatId,
         isRecurring ? `⏰ תזכורת קבועה: ${reminder.task}` : `⏰ תזכורת: ${reminder.task}\n\nהאם ביצעת?`,
         completionKeyboard(reminder.id)
       );
+      telegramMessageIds.push({ reminderId: reminder.id, messageId: sentReminder.messageId, kind: "reminder" });
       if (reminder.recurrenceType) {
         const next = await rescheduleRecurringReminder(reminder);
-        await sendMessage(reminder.chatId, `התזכורת הבאה נקבעה ל-${formatHebrewWallClock(next.dueAt)}`);
+        const sentNext = await sendMessage(reminder.chatId, `התזכורת הבאה נקבעה ל-${formatHebrewWallClock(next.dueAt)}`);
+        telegramMessageIds.push({ reminderId: reminder.id, messageId: sentNext.messageId, kind: "recurrence_next" });
       } else {
         await markReminderNotifiedAfterSend(reminder);
       }
@@ -89,7 +93,8 @@ export async function runSchedulerOnce(limit = 25): Promise<SchedulerResult> {
     if (!reminder) break;
     claimedIds.push(reminder.id);
     try {
-      await sendMessage(reminder.chatId, `⏰ תזכורת חוזרת:\n${reminder.task}\n\nהאם ביצעת?`, completionKeyboard(reminder.id));
+      const sentFollowup = await sendMessage(reminder.chatId, `⏰ תזכורת חוזרת:\n${reminder.task}\n\nהאם ביצעת?`, completionKeyboard(reminder.id));
+      telegramMessageIds.push({ reminderId: reminder.id, messageId: sentFollowup.messageId, kind: "followup" });
       await markFollowupSent(reminder);
       sent += 1;
     } catch (error) {
@@ -105,7 +110,7 @@ export async function runSchedulerOnce(limit = 25): Promise<SchedulerResult> {
       : claimedIds.length === 0
         ? "Due reminders existed before the run, but none were claimed. Check missing chat_id, locks, or status mismatch."
         : "Due reminders were claimed and processed.";
-  lastSchedulerResult = { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt, checkedAtUtc, checkedAtIsrael, dueCountBefore, claimedIds, failureReasons, selectionNote };
+  lastSchedulerResult = { ok: true, sent, recovered, failed, durationMs: Date.now() - startedAt, checkedAtUtc, checkedAtIsrael, dueCountBefore, claimedIds, telegramMessageIds, failureReasons, selectionNote };
   return lastSchedulerResult;
 }
 

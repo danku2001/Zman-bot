@@ -14,8 +14,8 @@ export async function POST(req: NextRequest) {
   if (!chatId) return json({ ok: false, error: "chat_id is required" }, 400);
 
   try {
-    await sendMessage(chatId, "בדיקת שליחה מ-ZmanBot ✅");
-    return json({ ok: true, chat_id: chatId, telegramStatus: "sent" });
+    const sent = await sendMessage(chatId, "בדיקת שליחה מ-ZmanBot ✅");
+    return json({ ok: true, chat_id: chatId, telegramStatus: "sent", messageId: sent.messageId });
   } catch (error) {
     return json({
       ok: false,

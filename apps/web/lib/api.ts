@@ -103,6 +103,7 @@ export function runScheduler(limit = 3): Promise<{
   checkedAtIsrael?: string;
   dueCountBefore?: number;
   claimedIds?: number[];
+  telegramMessageIds?: Array<{ reminderId: number; messageId: number | null; kind: "reminder" | "followup" | "recurrence_next" }>;
   failureReasons?: string[];
 }> {
   return request(`/api/scheduler/run?limit=${encodeURIComponent(String(limit))}`, {
