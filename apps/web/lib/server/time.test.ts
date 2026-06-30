@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { formatIsraelLocalIso, israelWallClockDate } from "./time";
+import { formatHebrewWallClock, formatIsraelLocalIso, israelWallClockDate } from "./time";
 
 test("formats UTC instants as Israel wall-clock time", () => {
   const utcInstant = new Date(Date.UTC(2026, 5, 30, 13, 8, 0, 0));
@@ -15,4 +15,9 @@ test("creates Israel wall-clock dates from UTC server instants", () => {
   assert.equal(wallClock.getDate(), 30);
   assert.equal(wallClock.getHours(), 16);
   assert.equal(wallClock.getMinutes(), 8);
+});
+
+test("formats wall-clock strings without timezone shifting", () => {
+  const text = formatHebrewWallClock("2026-06-30T16:09:00");
+  assert.match(text, /16:09/u);
 });

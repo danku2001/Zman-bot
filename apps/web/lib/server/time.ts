@@ -43,4 +43,18 @@ export function formatWallClockIso(date: Date): string {
   return `${safeDate.getFullYear()}-${String(safeDate.getMonth() + 1).padStart(2, "0")}-${String(safeDate.getDate()).padStart(2, "0")}T${String(safeDate.getHours()).padStart(2, "0")}:${String(safeDate.getMinutes()).padStart(2, "0")}:${String(safeDate.getSeconds()).padStart(2, "0")}`;
 }
 
+export function formatHebrewWallClock(value: string | null | undefined, fallback = "תאריך לא זמין", dateStyle: "short" | "medium" = "medium"): string {
+  if (!value) return fallback;
+  const match = value.match(/^(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}):(\d{2})(?::(\d{2}))?/u);
+  if (!match) return fallback;
+
+  const [, year, month, day, hour, minute] = match;
+  const date = new Date(Number(year), Number(month) - 1, Number(day), Number(hour), Number(minute), 0, 0);
+  if (!Number.isFinite(date.getTime())) return fallback;
+  return new Intl.DateTimeFormat("he-IL", {
+    dateStyle,
+    timeStyle: "short"
+  }).format(date);
+}
+
 ensureAppTimeZone();

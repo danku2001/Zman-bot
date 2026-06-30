@@ -3,18 +3,12 @@
 import Link from "next/link";
 import { useCallback, useEffect, useState } from "react";
 import { getEvents, getReminders, getStats } from "../lib/api";
+import { formatHebrewWallClock } from "../lib/date";
 import type { Reminder, ReminderEvent, ReminderStats } from "../lib/types";
 import { ChatIdField, getStoredChatId } from "./ChatIdField";
 
 function formatDate(value: string | null | undefined): string {
-  if (!value) return "לא זמין";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "לא זמין";
-  return new Intl.DateTimeFormat("he-IL", {
-    dateStyle: "short",
-    timeStyle: "short",
-    timeZone: "Asia/Jerusalem"
-  }).format(date);
+  return formatHebrewWallClock(value, "לא זמין", "short");
 }
 
 function statusLabel(status: Reminder["status"]): string {

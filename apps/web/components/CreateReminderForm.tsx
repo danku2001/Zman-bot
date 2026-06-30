@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { createReminder, parseReminder } from "../lib/api";
+import { formatHebrewWallClock } from "../lib/date";
 import { ChatIdField, getStoredChatId } from "./ChatIdField";
 
 type ParsePreview = {
@@ -15,14 +16,7 @@ type ParsePreview = {
 };
 
 function formatDate(value: string | undefined): string {
-  if (!value) return "לא זוהה";
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return "לא זוהה";
-  return new Intl.DateTimeFormat("he-IL", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Jerusalem"
-  }).format(date);
+  return formatHebrewWallClock(value, "לא זוהה", "medium");
 }
 
 function previewFrom(value: unknown): ParsePreview {

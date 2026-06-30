@@ -13,7 +13,7 @@ import {
   snoozeReminder
 } from "./db";
 import { parseReminderMessage, parseUserMessage } from "./parser";
-import { APP_TIME_ZONE, ensureAppTimeZone } from "./time";
+import { ensureAppTimeZone, formatHebrewWallClock } from "./time";
 import type { Reminder } from "../types";
 
 ensureAppTimeZone();
@@ -150,22 +150,7 @@ function doneReminders(reminders: Reminder[]): Reminder[] {
 }
 
 export function safeFormatDate(value: string | null | undefined, fallback = "תאריך לא זמין"): string {
-  if (!value) return fallback;
-  const date = new Date(value);
-  if (!Number.isFinite(date.getTime())) return fallback;
-  try {
-    return new Intl.DateTimeFormat("he-IL", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: process.env.TZ ?? APP_TIME_ZONE
-    }).format(date);
-  } catch {
-    return new Intl.DateTimeFormat("he-IL", {
-      dateStyle: "medium",
-      timeStyle: "short",
-      timeZone: APP_TIME_ZONE
-    }).format(date);
-  }
+  return formatHebrewWallClock(value, fallback, "medium");
 }
 
 function statusLabel(reminder: Reminder): string {
