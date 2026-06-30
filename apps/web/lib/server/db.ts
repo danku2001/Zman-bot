@@ -1,7 +1,10 @@
 import { neon } from "@neondatabase/serverless";
 import { calculateNextDueAt, normalizeHebrewText } from "./parser";
+import { ensureAppTimeZone } from "./time";
 import type { ParsedReminder, Recurrence, ReminderPriority, ReminderStatus, RecurrenceType } from "./types";
 import type { Reminder, ReminderEvent, ReminderStats } from "../types";
+
+ensureAppTimeZone();
 
 type Sql = ReturnType<typeof neon>;
 

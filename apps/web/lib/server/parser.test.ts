@@ -24,3 +24,11 @@ test("Hebrew number relative reminder is a create intent", () => {
   assert.equal(parsed.dueAt, "2026-06-29T10:05:00");
   assert.equal(parsed.task, "לבדוק");
 });
+
+test("relative reminders use Israel time on UTC server runtimes", () => {
+  assert.equal(process.env.TZ, "Asia/Jerusalem");
+  const israelFourPmAsUtcInstant = new Date(Date.UTC(2026, 5, 30, 13, 0, 0, 0));
+  const parsed = parseUserMessage("תזכיר לי עוד חמש דקות לבדוק", israelFourPmAsUtcInstant);
+  assert.equal(parsed.intent, "create");
+  assert.equal(parsed.dueAt, "2026-06-30T16:05:00");
+});

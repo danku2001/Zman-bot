@@ -1,4 +1,7 @@
 import type { ParsedUserMessage, ParseResult, ParsedReminder, ReminderPriority, Recurrence } from "./types";
+import { ensureAppTimeZone } from "./time";
+
+ensureAppTimeZone();
 
 const dayNames = new Map<string, number>([
   ["ראשון", 0],

@@ -10,6 +10,9 @@ import {
   rescheduleRecurringReminder
 } from "./db";
 import { sendMessage } from "./telegram";
+import { ensureAppTimeZone } from "./time";
+
+ensureAppTimeZone();
 
 function nowLocalIso(): string {
   const now = new Date();

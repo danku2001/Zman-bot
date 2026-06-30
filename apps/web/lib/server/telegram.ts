@@ -13,7 +13,10 @@ import {
   snoozeReminder
 } from "./db";
 import { parseReminderMessage, parseUserMessage } from "./parser";
+import { APP_TIME_ZONE, ensureAppTimeZone } from "./time";
 import type { Reminder } from "../types";
+
+ensureAppTimeZone();
 
 type TelegramMessage = { message_id: number; chat: { id: number | string }; text?: string };
 type TelegramCallback = { id: string; data?: string; message?: TelegramMessage };
@@ -154,13 +157,13 @@ export function safeFormatDate(value: string | null | undefined, fallback = "×ª×
     return new Intl.DateTimeFormat("he-IL", {
       dateStyle: "medium",
       timeStyle: "short",
-      timeZone: process.env.TZ ?? "Asia/Jerusalem"
+      timeZone: process.env.TZ ?? APP_TIME_ZONE
     }).format(date);
   } catch {
     return new Intl.DateTimeFormat("he-IL", {
       dateStyle: "medium",
       timeStyle: "short",
-      timeZone: "Asia/Jerusalem"
+      timeZone: APP_TIME_ZONE
     }).format(date);
   }
 }
