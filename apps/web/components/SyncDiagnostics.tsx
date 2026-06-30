@@ -1,13 +1,14 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
-import { getApiBaseError, getApiBaseLabel, getHealth, getReminders, getSyncDebug, getTelegramStatus, repairTelegramWebhook, runScheduler } from "../lib/api";
+import { getApiBaseError, getApiBaseLabel, getHealth, getReminders, getSchedulerDebug, getSyncDebug, getTelegramStatus, repairTelegramWebhook, runScheduler } from "../lib/api";
 import type { Reminder } from "../lib/types";
 import { ChatIdField, getStoredChatId } from "./ChatIdField";
 
 type HealthResult = Awaited<ReturnType<typeof getHealth>>;
 type SyncResult = Awaited<ReturnType<typeof getSyncDebug>>;
 type SchedulerResult = Awaited<ReturnType<typeof runScheduler>>;
+type SchedulerDebugResult = Awaited<ReturnType<typeof getSchedulerDebug>>;
 type TelegramStatusResult = Awaited<ReturnType<typeof getTelegramStatus>>;
 
 function latestFive(reminders: Reminder[]): Reminder[] {
@@ -24,6 +25,7 @@ export function SyncDiagnostics() {
   const [reminderCount, setReminderCount] = useState<number | null>(null);
   const [latest, setLatest] = useState<Reminder[]>([]);
   const [schedulerResult, setSchedulerResult] = useState<SchedulerResult | null>(null);
+  const [schedulerDebug, setSchedulerDebug] = useState<SchedulerDebugResult | null>(null);
   const [telegramStatus, setTelegramStatus] = useState<TelegramStatusResult["telegram"] | null>(null);
   const [loading, setLoading] = useState(false);
   const [schedulerLoading, setSchedulerLoading] = useState(false);
@@ -42,20 +44,23 @@ export function SyncDiagnostics() {
     setReminderCount(null);
     setLatest([]);
     setTelegramStatus(null);
+    setSchedulerDebug(null);
     try {
       if (apiBaseError) throw new Error(apiBaseError);
       const healthResult = await getHealth();
       setHealth(healthResult);
       if (!nextChatId) throw new Error("חסר Chat ID. שלחו /id בטלגרם והזינו כאן את המספר.");
-      const [syncResult, remindersResult, telegramResult] = await Promise.all([
+      const [syncResult, remindersResult, telegramResult, schedulerDebugResult] = await Promise.all([
         getSyncDebug(nextChatId),
         getReminders(nextChatId),
-        getTelegramStatus()
+        getTelegramStatus(),
+        getSchedulerDebug()
       ]);
       setSync(syncResult);
       setReminderCount(remindersResult.reminders.length);
       setLatest(latestFive(remindersResult.reminders));
       setTelegramStatus(telegramResult.telegram);
+      setSchedulerDebug(schedulerDebugResult);
     } catch (err) {
       setError(err instanceof Error ? err.message : "בדיקת הסנכרון נכשלה");
     } finally {
@@ -70,6 +75,7 @@ export function SyncDiagnostics() {
     try {
       if (apiBaseError) throw new Error(apiBaseError);
       setSchedulerResult(await runScheduler(3));
+      setSchedulerDebug(await getSchedulerDebug());
       if (chatId) await runDiagnostics(chatId);
     } catch (err) {
       setError(err instanceof Error ? err.message : "בדיקת scheduler נכשלה");
@@ -156,6 +162,26 @@ export function SyncDiagnostics() {
             Pending updates: {telegramStatus.pendingUpdateCount}
             {telegramStatus.lastErrorMessage ? ` · Last error: ${telegramStatus.lastErrorMessage}` : ""}
           </p>
+        </div>
+      ) : null}
+
+      {schedulerDebug ? (
+        <div className={`mt-4 rounded-md border p-3 ${schedulerDebug.pendingDueCount > 0 ? "border-coral/30 bg-coral/10" : "border-mint/20 bg-mint/5"}`}>
+          <p className="font-black text-ink">Scheduler אוטומטי</p>
+          <p className="mt-1 text-sm font-semibold text-ink/70">
+            תזכורות שעבר זמנן ועדיין לא נשלחו: {schedulerDebug.pendingDueCount}
+          </p>
+          <p className="mt-1 text-xs font-semibold text-ink/60">זמן שרת: {schedulerDebug.nowIsrael}</p>
+          {schedulerDebug.pendingDueCount > 0 ? (
+            <p className="mt-2 text-sm font-bold text-coral">
+              יש תזכורת שמחכה אחרי הזמן שלה. זה אומר שהשליחה מטלגרם תקינה, אבל cron-job.org לא מפעיל את ה-scheduler כל דקה או שהוא קורא לכתובת בלי הרשאה.
+            </p>
+          ) : null}
+          {schedulerDebug.nextPendingReminder ? (
+            <p className="mt-2 text-xs font-semibold text-ink/60">
+              הבאה בתור: #{schedulerDebug.nextPendingReminder.id} · {schedulerDebug.nextPendingReminder.dueAt}
+            </p>
+          ) : null}
         </div>
       ) : null}
 

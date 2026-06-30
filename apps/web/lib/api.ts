@@ -109,6 +109,19 @@ export function runScheduler(limit = 3): Promise<{
   });
 }
 
+export function getSchedulerDebug(): Promise<{
+  ok: boolean;
+  nowUtc: string;
+  nowIsrael: string;
+  pendingDueCount: number;
+  nextPendingReminder: Pick<Reminder, "id" | "chatId" | "task" | "dueAt" | "status"> | null;
+  lastSchedulerEvents: Array<Pick<ReminderEvent, "id" | "reminderId" | "chatId" | "eventType" | "createdAt">>;
+  canSendTelegram: boolean;
+  telegramStatus: string;
+}> {
+  return request("/api/debug/scheduler");
+}
+
 export function getTelegramStatus(): Promise<{
   telegram: {
     ok: boolean;

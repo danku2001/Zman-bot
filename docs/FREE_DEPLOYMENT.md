@@ -119,6 +119,7 @@ X-Telegram-Bot-Api-Secret-Token
 ## 5. cron-job.org
 
 Vercel Hobby לא מתאים ל-cron כל דקה, לכן משתמשים ב-cron-job.org.
+חשוב: בלי השלב הזה הבוט יענה שהוא קבע תזכורת, אבל אף שרת לא “יתעורר” בזמן כדי לשלוח אותה.
 
 1. פתחו חשבון חינמי ב-cron-job.org.
 2. צרו cron job חדש.
@@ -131,9 +132,11 @@ https://YOUR_VERCEL_DOMAIN/api/scheduler/run?secret=CRON_SECRET
 ```
 
 ה-endpoint מקבל גם `?cron_secret=CRON_SECRET`, `?token=CRON_SECRET`, header בשם `x-cron-secret`, או `Authorization: Bearer CRON_SECRET`.
+בנוסף, קריאות שמגיעות מ-cron-job.org מזוהות לפי User-Agent כדי למנוע מצב שבו job קיים אך נופל בגלל header חסר. עדיין מומלץ להשאיר את ה-`secret` ב-URL.
 
 6. Timeout: פחות מ-30 שניות.
 7. שמרו והפעילו.
+8. ודאו שה-job פעיל ומחזיר HTTP 200. אם הוא מחזיר 401, ה-`CRON_SECRET` ב-URL לא תואם למה שמוגדר ב-Vercel.
 
 תשובה תקינה:
 
@@ -164,6 +167,7 @@ https://YOUR_VERCEL_DOMAIN/api/scheduler/run?secret=CRON_SECRET
 8. בדקו `/week` וודאו שמשימות שבוצעו לא מופיעות; בדקו `/completed` כדי לראות אותן בנפרד.
 9. בדקו export/import במסך Settings.
 10. במסך reminders לחצו `בדוק סנכרון` וודאו שה-counts תואמים ל-Chat ID.
+11. במסך Settings לחצו `בדוק עכשיו`. אם מופיע "תזכורות שעבר זמנן ועדיין לא נשלחו" עם מספר גדול מ-0, הבעיה היא ש-cron-job.org לא מפעיל את `/api/scheduler/run` כל דקה.
 
 ## 7. Debug Sync
 
