@@ -1,5 +1,5 @@
 import type { ParsedUserMessage, ParseResult, ParsedReminder, ReminderPriority, Recurrence } from "./types";
-import { ensureAppTimeZone } from "./time";
+import { ensureAppTimeZone, formatWallClockIso, israelWallClockDate } from "./time";
 
 ensureAppTimeZone();
 
@@ -101,7 +101,7 @@ function pad(value: number): string {
 }
 
 function toIsoLocal(date: Date): string {
-  return new Date(date.getTime() - date.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+  return formatWallClockIso(date);
 }
 
 export function normalizeHebrewText(value: string): string {
@@ -269,7 +269,8 @@ function success(value: ParsedReminder): ParseResult {
   return { ok: true, value: { ...value, task: meta.task, category: value.category ?? meta.category, priority: value.priority ?? meta.priority } };
 }
 
-export function parseReminderMessage(message: string, now = new Date()): ParseResult {
+export function parseReminderMessage(message: string, now = new Date(), nowIsWallClock = false): ParseResult {
+  now = nowIsWallClock ? now : israelWallClockDate(now);
   const text = cleanPrefix(message);
 
   const relativeMatch = text.match(new RegExp(`^(?:עוד|בעוד)\\s+(?:(\\d+|${relativeNumberPattern})\\s*(דקות?|שעות?|ימים?|שבועות?)|דקה|רבע\\s+שעה|חצי\\s+שעה|שעה|שעתיים|יום|יומיים|שבוע|שבועיים)\\s+(.+)$`, "u"));
@@ -489,15 +490,16 @@ export function parseReminderMessage(message: string, now = new Date()): ParseRe
     const match = text.match(pattern);
     if (!match) continue;
     if (match[1] === "היום" || match[1] === "מחר") {
-      return parseReminderMessage(`תזכיר לי ${match[1]} ${match[2]} ${match[5]}`, now);
+      return parseReminderMessage(`תזכיר לי ${match[1]} ${match[2]} ${match[5]}`, now, true);
     }
-    return parseReminderMessage(`תזכיר לי ${match[2]} ${match[3]} ${match[1]}`, now);
+    return parseReminderMessage(`תזכיר לי ${match[2]} ${match[3]} ${match[1]}`, now, true);
   }
 
   return { ok: false, error: helpfulError };
 }
 
 export function calculateNextDueAt(recurrence: Recurrence, from = new Date()): string {
+  from = israelWallClockDate(from);
   const [hourText, minuteText] = recurrence.time.split(":");
   const parsed = parseTime(hourText, minuteText);
   if (!parsed) throw new Error(`Invalid recurrence time: ${recurrence.time}`);

@@ -10,13 +10,12 @@ import {
   rescheduleRecurringReminder
 } from "./db";
 import { sendMessage } from "./telegram";
-import { ensureAppTimeZone } from "./time";
+import { ensureAppTimeZone, formatIsraelLocalIso } from "./time";
 
 ensureAppTimeZone();
 
 function nowLocalIso(): string {
-  const now = new Date();
-  return new Date(now.getTime() - now.getTimezoneOffset() * 60_000).toISOString().slice(0, 19);
+  return formatIsraelLocalIso();
 }
 
 function completionKeyboard(id: number) {
