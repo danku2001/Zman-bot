@@ -93,7 +93,17 @@ export function getHealth(): Promise<{ ok: boolean; service: string; mode: strin
   return request("/api/health");
 }
 
-export function runScheduler(limit = 3): Promise<{ ok: boolean; sent: number; recovered: number; failed: number; durationMs: number }> {
+export function runScheduler(limit = 3): Promise<{
+  ok: boolean;
+  sent: number;
+  recovered: number;
+  failed: number;
+  durationMs: number;
+  checkedAtUtc?: string;
+  checkedAtIsrael?: string;
+  claimedIds?: number[];
+  failureReasons?: string[];
+}> {
   return request(`/api/scheduler/run?limit=${encodeURIComponent(String(limit))}`, {
     method: "POST"
   });

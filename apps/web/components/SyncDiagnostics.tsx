@@ -165,6 +165,17 @@ export function SyncDiagnostics() {
           <p className="mt-1 text-sm font-semibold text-ink/70">
             נשלחו: {schedulerResult.sent} · נכשלו: {schedulerResult.failed} · שוחזרו: {schedulerResult.recovered} · זמן: {schedulerResult.durationMs}ms
           </p>
+          {schedulerResult.checkedAtIsrael ? (
+            <p className="mt-1 text-xs font-semibold text-ink/60">נבדק ב: {schedulerResult.checkedAtIsrael}</p>
+          ) : null}
+          {schedulerResult.claimedIds?.length ? (
+            <p className="mt-1 text-xs font-semibold text-ink/60">נשלחו IDs: {schedulerResult.claimedIds.join(", ")}</p>
+          ) : null}
+          {schedulerResult.failureReasons?.length ? (
+            <div className="mt-2 rounded-md bg-coral/10 p-2 text-xs font-bold text-coral">
+              {schedulerResult.failureReasons.map((reason) => <p key={reason}>{reason}</p>)}
+            </div>
+          ) : null}
         </div>
       ) : null}
 
